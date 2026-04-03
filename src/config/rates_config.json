@@ -1,0 +1,193 @@
+{
+  "vat_rate": {
+    "value": 0.18,
+    "effective_date": "2025-01-01",
+    "expiry_date": null,
+    "note": "Israeli VAT rate. Was 0.17 before 2025-01-01"
+  },
+  "vat_rate_pre_2025": {
+    "value": 0.17,
+    "effective_date": "2015-10-01",
+    "expiry_date": "2024-12-31",
+    "note": "Israeli VAT rate before 2025"
+  },
+  "permit_fee_rate": {
+    "value": 0.91,
+    "effective_date": "2020-01-01",
+    "expiry_date": null,
+    "note": "RMI permit fee rate per decision 1523"
+  },
+  "hivun_375_rate": {
+    "value": 0.0375,
+    "effective_date": "2020-01-01",
+    "expiry_date": null,
+    "note": "Capitalization rate for 3.75% track"
+  },
+  "hivun_33_rate": {
+    "value": 0.33,
+    "effective_date": "2020-01-01",
+    "expiry_date": null,
+    "note": "Purchase rate for 33% track (standard, non-priority)"
+  },
+  "hivun_375_default_sqm": {
+    "value": 808,
+    "effective_date": "2020-01-01",
+    "expiry_date": null,
+    "note": "Default equivalent sqm for standard nachla (2.5 dunam, 375 sqm rights). Must be calculated dynamically if non-standard."
+  },
+  "usage_fee_residential": {
+    "value": 0.05,
+    "effective_date": "2020-01-01",
+    "expiry_date": null,
+    "note": "Usage fee rate for residential (non-priority area)"
+  },
+  "usage_fee_priority": {
+    "value": 0.03,
+    "effective_date": "2020-01-01",
+    "expiry_date": null,
+    "note": "Usage fee rate for residential in priority area (A/B/frontline)"
+  },
+  "usage_fee_agricultural": {
+    "value": 0.02,
+    "effective_date": "2020-01-01",
+    "expiry_date": null,
+    "note": "Usage fee rate for agricultural deviation"
+  },
+  "usage_fee_plach": {
+    "value": 0.05,
+    "effective_date": "2020-01-01",
+    "expiry_date": null,
+    "note": "Usage fee rate for PLACH (commercial use), based on commercial value"
+  },
+  "usage_period_3rd_plus_years": {
+    "value": 7,
+    "effective_date": "2020-01-01",
+    "expiry_date": null,
+    "note": "Maximum retrospective usage fee period for 3rd+ house (years)"
+  },
+  "usage_period_2nd_house_years": {
+    "value": 2,
+    "effective_date": "2020-01-01",
+    "expiry_date": null,
+    "note": "Maximum retrospective usage fee period for 2nd house deviation (years)"
+  },
+  "purchase_tax_rate": {
+    "value": 0.06,
+    "effective_date": "2020-01-01",
+    "expiry_date": null,
+    "note": "Purchase tax (mas rechisha) rate on RMI payments"
+  },
+  "betterment_levy_rate": {
+    "value": 0.50,
+    "effective_date": "2000-01-01",
+    "expiry_date": null,
+    "note": "Betterment levy (hetel hashbacha) rate: 50% of value increase"
+  },
+  "house_exemption_sqm": {
+    "value": 160,
+    "effective_date": "2020-01-01",
+    "expiry_date": null,
+    "note": "Permit fee exemption threshold for house 1 and 2 (sqm main area)"
+  },
+  "mamad_exemption_sqm": {
+    "value": 12,
+    "effective_date": "2020-01-01",
+    "expiry_date": null,
+    "note": "Permit fee exemption for first mamad per house (sqm)"
+  },
+  "standard_plot_size_sqm": {
+    "value": 2500,
+    "effective_date": "2020-01-01",
+    "expiry_date": null,
+    "note": "Standard nachla residential plot size (2.5 dunam)"
+  },
+  "standard_taba_rights_sqm": {
+    "value": 375,
+    "effective_date": "2020-01-01",
+    "expiry_date": null,
+    "note": "Standard nachla taba building rights (sqm)"
+  },
+  "min_split_plot_sqm": {
+    "value": 350,
+    "effective_date": "2020-01-01",
+    "expiry_date": null,
+    "note": "Minimum plot size for split (sqm)"
+  },
+  "post_2009_deduction_cutoff": {
+    "value": "2009-01-01",
+    "effective_date": "2020-01-01",
+    "expiry_date": null,
+    "note": "Only permit fees purchased after this date are deducted from 33% calculation (decision 979/1311)"
+  },
+  "priority_area_discounts": {
+    "A": {
+      "permit": 0.51,
+      "hivun_375": 0.51,
+      "purchase_33": 0.2014,
+      "split_160": 0.1639,
+      "split_rest": 0.2014,
+      "usage": 0.03,
+      "note": "Priority area A: permit/hivun 51% discount; purchase/split use reduced rates (not discount %); usage 3%"
+    },
+    "B": {
+      "permit": 0.25,
+      "hivun_375": 0.25,
+      "purchase_33": 0.2014,
+      "split_160": 0.1639,
+      "split_rest": 0.2014,
+      "usage": 0.03,
+      "note": "Priority area B: permit/hivun 25% discount; purchase/split use reduced rates; usage 3%"
+    },
+    "frontline": {
+      "permit": 0.31,
+      "hivun_375": 0.31,
+      "purchase_33": null,
+      "split_160": null,
+      "split_rest": null,
+      "usage": 0.03,
+      "note": "Frontline (kav imut): permit/hivun 31% discount; usage 3%. purchase_33/split rates vary - verify with RMI."
+    },
+    "effective_date": "2020-01-01",
+    "expiry_date": null
+  },
+  "sqm_equivalent_coefficients": {
+    "main": 1.0,
+    "mamad": 0.9,
+    "service": 0.4,
+    "auxiliary": 0.5,
+    "yard_effective": 0.25,
+    "yard_remainder": 0.2,
+    "yard_far": 0.1,
+    "pool": 0.3,
+    "basement_service": 0.3,
+    "basement_residential": 0.7,
+    "effective_date": "2020-01-01",
+    "expiry_date": null,
+    "note": "Coefficients for equivalent sqm calculation (nachla valuation)"
+  },
+  "permit_fee_coefficients": {
+    "main": 1.0,
+    "service": 0.5,
+    "pool": 0.3,
+    "basement_service": 0.3,
+    "basement_residential": 0.7,
+    "mamad": 0.9,
+    "effective_date": "2020-01-01",
+    "expiry_date": null,
+    "note": "Coefficients for permit fee calculation by area type"
+  },
+  "usage_fee_coefficients": {
+    "main": 1.0,
+    "service": 0.5,
+    "pergola": 0.5,
+    "effective_date": "2020-01-01",
+    "expiry_date": null,
+    "note": "Eco-coefficients for usage fee calculation"
+  },
+  "yard_effective_max_sqm": {
+    "value": 1000,
+    "effective_date": "2020-01-01",
+    "expiry_date": null,
+    "note": "Maximum effective yard area (sqm) before applying remainder coefficient"
+  }
+}
