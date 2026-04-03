@@ -44,7 +44,9 @@ nachla-agent/
 │   │   ├── routes.py
 │   │   └── jobs.py
 │   ├── ui/                   # Chainlit frontend
-│   │   └── app.py
+│   │   ├── app.py
+│   │   ├── components.py     # Custom UI components
+│   │   └── auth.py           # Authentication
 │   ├── documents/            # Document processing
 │   │   ├── pdf_parser.py
 │   │   ├── excel_reader.py
@@ -58,25 +60,29 @@ nachla-agent/
 │   └── agent/                # Agent orchestration
 │       ├── main_agent.py
 │       ├── system_prompt.py
+│       ├── workflow.py       # Phase-based workflow engine
 │       └── audit_log.py
 ├── data/
 │   ├── templates/            # Word/Excel report templates
 │   └── reference/            # Reference data (user uploads)
 ├── tests/
+│   ├── test_environment.py   # Environment validation (owned by agent-builder)
 │   ├── test_calculations.py
 │   ├── test_documents.py
+│   ├── test_integrations.py
 │   ├── test_agent.py
 │   └── golden/               # Golden test data from 25 example reports
-├── scripts/
-│   └── setup.py
 ├── docs/
 │   ├── agent_workflow_flow.md
 │   ├── technical_blueprint.md
 │   └── expert_review_consolidated.md
 ├── requirements.txt
-├── Dockerfile
-├── docker-compose.yml
-└── .mcp.json
+├── pyproject.toml            # ruff + pytest config
+├── .env.example              # Required environment variables
+├── .gitignore
+├── Dockerfile                # (Phase 5, owned by integration-builder)
+├── docker-compose.yml        # (Phase 5, owned by integration-builder)
+└── .mcp.json                 # 3 MCP servers: playwright, monday, memory
 ```
 
 ## Coding Standards
@@ -108,6 +114,7 @@ nachla-agent/
 - Only post-2009 permit purchases deducted from 33% calculation
 - Pre-1965 buildings are exempt from building permits
 - Basement: 0.3 coefficient (service) or 0.7 (residential) - not always 0.7
+- Permit fee cap: decision 1523 limits total permit fees per nachala - check after summing all buildings
 
 ## Test Commands
 ```bash

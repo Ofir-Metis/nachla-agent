@@ -5,6 +5,11 @@
       "command": "npx",
       "args": ["-y", "@playwright/mcp", "--persistent"]
     },
+    "monday": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@mondaycom/mcp"]
+    },
     "memory": {
       "type": "stdio",
       "command": "npx",

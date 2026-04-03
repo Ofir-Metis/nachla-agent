@@ -15,10 +15,12 @@ Build the main agent that ties everything together: system prompt, tool registra
 - `src/agent/system_prompt.py` - System prompt with domain knowledge
 - `src/agent/audit_log.py` - Immutable audit logging for every calculation
 - `src/agent/workflow.py` - Phase-based workflow (intake → analysis → calc → report)
+- `src/config/settings.py` - App settings and configuration loading
 - `src/models/building.py` - Building classification data model
 - `src/models/nachla.py` - Nachla/property data model
 - `src/models/taba.py` - Taba/zoning plan data model
 - `src/models/report.py` - Report structure data model
+- `tests/test_environment.py` - Environment validation tests
 - `tests/test_agent.py` - Agent workflow tests
 
 ## Agent Architecture

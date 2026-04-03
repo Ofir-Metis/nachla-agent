@@ -116,9 +116,31 @@ def test_template_present():
 def test_golden_data_present():
     """25 example reports copied for testing."""
     golden_path = "tests/golden/בדיקות התכנות"
-    if os.path.isdir(golden_path):
-        examples = os.listdir(golden_path)
-        assert len(examples) >= 20, f"Expected 20+ examples, found {len(examples)}"
+    assert os.path.isdir(golden_path), f"Missing golden test data directory: {golden_path}"
+    examples = os.listdir(golden_path)
+    assert len(examples) >= 20, f"Expected 20+ examples, found {len(examples)}"
+
+
+def test_init_files_exist():
+    """All Python packages have __init__.py."""
+    packages = [
+        "src", "src/tools", "src/models", "src/config", "src/api",
+        "src/ui", "src/documents", "src/integrations", "src/agent",
+    ]
+    for pkg in packages:
+        init_path = os.path.join(pkg, "__init__.py")
+        assert os.path.isfile(init_path), f"Missing {init_path}"
+
+
+def test_env_example_exists():
+    """.env.example has all required keys."""
+    assert os.path.isfile(".env.example"), "Missing .env.example"
+    with open(".env.example", encoding="utf-8") as f:
+        content = f.read()
+    required_keys = ["ANTHROPIC_API_KEY", "MONDAY_API_TOKEN", "MONDAY_BOARD_ID",
+                     "ONEDRIVE_CLIENT_ID", "GOOGLE_DRIVE_CREDENTIALS_PATH", "LOG_LEVEL"]
+    for key in required_keys:
+        assert key in content, f".env.example missing key: {key}"
 
 
 def test_mcp_config():
@@ -128,7 +150,9 @@ def test_mcp_config():
         config = json.load(f)
     servers = config.get("mcpServers", {})
     assert "playwright" in servers, "Missing playwright MCP"
+    assert "monday" in servers, "Missing monday MCP"
     assert "memory" in servers, "Missing memory MCP"
+    assert len(servers) == 3, f"Expected exactly 3 MCP servers, found {len(servers)}: {list(servers.keys())}"
     # Should NOT have removed servers
     assert "filesystem" not in servers, "filesystem MCP should be removed (SDK built-in)"
     assert "excel" not in servers, "excel MCP should be removed (use openpyxl)"

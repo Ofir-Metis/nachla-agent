@@ -484,7 +484,7 @@ def calc_sqm_equivalent(taba_rights: dict, plot_size_sqm: float) -> dict:
         "main": 1.0, "mamad": 0.9, "service": 0.4,
         "auxiliary": 0.5, "yard_effective": 0.25,
         "yard_remainder": 0.2, "yard_far": 0.1,
-        "pool": 0.3, "basement": 0.7
+        "pool": 0.3, "basement_service": 0.3, "basement_residential": 0.7
     }
     ...
 
