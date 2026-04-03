@@ -96,6 +96,9 @@ class Nachla(BaseModel):
 
     # Mandatory document uploads (workflow step 0, fields #4-5)
     survey_map_path: str | None = Field(default=None, description="נתיב למפת מדידה (PDF/תמונה)")
+    survey_map_date: str | None = Field(
+        default=None, description="תאריך מפת מדידה (נשלף אוטומטית מה-PDF)"
+    )
     building_permits_paths: list[str] = Field(
         default_factory=list, description="נתיבים להיתרי בנייה (PDF/תמונות)"
     )
