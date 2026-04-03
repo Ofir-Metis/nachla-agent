@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+*.key
+*.pem
+secrets/
+
+# Data (user uploads - not committed)
+data/reference/*.xlsx
+data/reference/*.pdf
+data/templates/*.docx
+data/templates/*.xlsx
+uploads/
+reports/
+
+# Keep directory structure
+!data/reference/.gitkeep
+!data/templates/.gitkeep
+!uploads/.gitkeep
+!reports/.gitkeep
+
+# Claude
+.claude/settings.local.json
