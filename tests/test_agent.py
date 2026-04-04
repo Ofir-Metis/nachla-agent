@@ -18,6 +18,7 @@ import pytest
 from agent.audit_log import AuditLogger
 from agent.system_prompt import build_system_prompt
 from agent.workflow import (
+    MONDAY_FAILURE_STATUSES,
     _MONDAY_STATUS_MAP,
     _PHASE_ORDER,
     WorkflowError,
@@ -561,3 +562,114 @@ class TestSettingsAgentFields:
         assert s.max_report_generation_time == 300
         assert s.max_tool_retries == 3
         assert s.checkpoint_timeout == 0
+
+
+# ---------------------------------------------------------------------------
+# Workflow Error Recovery (Phase 4)
+# ---------------------------------------------------------------------------
+
+
+class TestWorkflowErrorRecovery:
+    """Test error recovery: retry, max retries, partial results."""
+
+    def test_record_phase_failure(self, workflow: WorkflowState) -> None:
+        """Recording a failure increments attempts and adds to failed_phases."""
+        workflow.record_phase_failure(WorkflowPhase.TABA_ANALYSIS, "timeout")
+        assert "taba_analysis" in workflow.failed_phases
+        assert workflow.phase_attempts["taba_analysis"] == 1
+
+    def test_record_multiple_failures(self, workflow: WorkflowState) -> None:
+        """Multiple failures increment the counter each time."""
+        workflow.record_phase_failure(WorkflowPhase.TABA_ANALYSIS, "error 1")
+        workflow.record_phase_failure(WorkflowPhase.TABA_ANALYSIS, "error 2")
+        assert workflow.phase_attempts["taba_analysis"] == 2
+        # Phase should appear only once in failed_phases
+        assert workflow.failed_phases.count("taba_analysis") == 1
+
+    def test_can_retry_phase_under_limit(self, workflow: WorkflowState) -> None:
+        """Phase can be retried when under max_retries."""
+        workflow.record_phase_failure(WorkflowPhase.TABA_ANALYSIS, "error")
+        assert workflow.can_retry_phase(WorkflowPhase.TABA_ANALYSIS) is True
+
+    def test_can_retry_phase_at_limit(self, workflow: WorkflowState) -> None:
+        """Phase cannot be retried when at max_retries."""
+        for i in range(workflow.max_retries):
+            workflow.record_phase_failure(WorkflowPhase.TABA_ANALYSIS, f"error {i}")
+        assert workflow.can_retry_phase(WorkflowPhase.TABA_ANALYSIS) is False
+
+    def test_can_retry_phase_never_failed(self, workflow: WorkflowState) -> None:
+        """Phase that never failed can be retried."""
+        assert workflow.can_retry_phase(WorkflowPhase.INTAKE) is True
+
+    def test_retry_phase_resets_current(self, workflow: WorkflowState) -> None:
+        """Retrying a phase sets it as current and removes from completed."""
+        workflow.complete_current_phase()
+        workflow.advance(WorkflowPhase.TABA_ANALYSIS)
+        workflow.record_phase_failure(WorkflowPhase.TABA_ANALYSIS, "error")
+        # Mark as completed first so we can test removal
+        workflow.complete_current_phase()
+        workflow.retry_phase(WorkflowPhase.TABA_ANALYSIS)
+        assert workflow.current_phase == WorkflowPhase.TABA_ANALYSIS
+        assert WorkflowPhase.TABA_ANALYSIS not in workflow.completed_phases
+
+    def test_retry_phase_raises_when_exhausted(self, workflow: WorkflowState) -> None:
+        """Retrying a phase raises WorkflowError when retries exhausted."""
+        for i in range(workflow.max_retries):
+            workflow.record_phase_failure(WorkflowPhase.INTAKE, f"error {i}")
+        with pytest.raises(WorkflowError, match="exhausted"):
+            workflow.retry_phase(WorkflowPhase.INTAKE)
+
+    def test_save_and_get_partial_results(self, workflow: WorkflowState) -> None:
+        """Partial results can be saved and retrieved."""
+        partial = {"buildings_processed": 3, "buildings_remaining": 2}
+        workflow.save_partial_results(WorkflowPhase.BUILDING_MAPPING, partial)
+        retrieved = workflow.get_partial_results(WorkflowPhase.BUILDING_MAPPING)
+        assert retrieved == partial
+
+    def test_get_partial_results_returns_none_when_empty(self, workflow: WorkflowState) -> None:
+        """Getting partial results for a phase with none returns None."""
+        assert workflow.get_partial_results(WorkflowPhase.INTAKE) is None
+
+    def test_retry_preserves_partial_results(self, workflow: WorkflowState) -> None:
+        """Retrying a phase does not clear its partial results."""
+        partial = {"some_data": 42}
+        workflow.save_partial_results(WorkflowPhase.INTAKE, partial)
+        workflow.record_phase_failure(WorkflowPhase.INTAKE, "error")
+        workflow.retry_phase(WorkflowPhase.INTAKE)
+        assert workflow.get_partial_results(WorkflowPhase.INTAKE) == partial
+
+
+# ---------------------------------------------------------------------------
+# Monday.com Failure Statuses (Phase 4)
+# ---------------------------------------------------------------------------
+
+
+class TestMondayFailureStatuses:
+    """Test Monday.com failure/waiting status strings."""
+
+    def test_waiting_for_client_status_exists(self) -> None:
+        """Waiting for client status is defined."""
+        assert "waiting_for_client" in MONDAY_FAILURE_STATUSES
+        assert MONDAY_FAILURE_STATUSES["waiting_for_client"] == "חסר מידע - ממתין ללקוח"
+
+    def test_failed_manual_status_exists(self) -> None:
+        """Failed manual status is defined."""
+        assert "failed_manual" in MONDAY_FAILURE_STATUSES
+        assert MONDAY_FAILURE_STATUSES["failed_manual"] == "נכשל - דורש טיפול ידני"
+
+    def test_failure_statuses_are_valid_monday_statuses(self) -> None:
+        """All failure statuses should be in the Monday.com VALID_STATUSES set."""
+        from integrations.monday_client import VALID_STATUSES
+
+        for status in MONDAY_FAILURE_STATUSES.values():
+            assert status in VALID_STATUSES, f"Failure status '{status}' not in VALID_STATUSES"
+
+    def test_get_monday_failure_status(self, workflow: WorkflowState) -> None:
+        """WorkflowState returns correct failure status strings."""
+        assert workflow.get_monday_failure_status("waiting_for_client") == "חסר מידע - ממתין ללקוח"
+        assert workflow.get_monday_failure_status("failed_manual") == "נכשל - דורש טיפול ידני"
+
+    def test_get_monday_failure_status_fallback(self, workflow: WorkflowState) -> None:
+        """Unknown failure type falls back to current phase status."""
+        result = workflow.get_monday_failure_status("unknown_type")
+        assert result == workflow.get_monday_status()

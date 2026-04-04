@@ -7,10 +7,13 @@ proceed until the user has confirmed building classifications.
 
 from __future__ import annotations
 
+import logging
 from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 
 class WorkflowPhase(StrEnum):
@@ -55,6 +58,12 @@ _MONDAY_STATUS_MAP: dict[WorkflowPhase, str] = {
     WorkflowPhase.REVIEW: "בבקרה",
     WorkflowPhase.EXPORT: "מאושר",
     WorkflowPhase.COMPLETE: "מאושר",
+}
+
+# Additional Monday.com statuses for failure/waiting states (not phase-specific).
+MONDAY_FAILURE_STATUSES: dict[str, str] = {
+    "waiting_for_client": "חסר מידע - ממתין ללקוח",
+    "failed_manual": "נכשל - דורש טיפול ידני",
 }
 
 # Mapping from workflow phase to Monday.com update message template.
@@ -128,6 +137,24 @@ class WorkflowState(BaseModel):
     sanity_check_results: dict[str, Any] = Field(
         default_factory=dict,
         description="Results from step 13 sanity checks",
+    )
+
+    # Error recovery (Phase 4)
+    failed_phases: list[str] = Field(
+        default_factory=list,
+        description="Phases that have failed at least once",
+    )
+    phase_attempts: dict[str, int] = Field(
+        default_factory=dict,
+        description="Number of attempts per phase",
+    )
+    max_retries: int = Field(
+        default=3,
+        description="Maximum retry attempts per phase",
+    )
+    partial_results: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Partial results saved from incomplete phases",
     )
 
     model_config = {"arbitrary_types_allowed": True}
@@ -250,6 +277,92 @@ class WorkflowState(BaseModel):
             return template.format(**kwargs)
         except KeyError:
             return template
+
+    def record_phase_failure(self, phase: WorkflowPhase, error: str) -> None:
+        """Record a phase failure for potential retry.
+
+        Increments the attempt counter and adds the phase to failed_phases.
+
+        Args:
+            phase: The phase that failed.
+            error: Description of the failure.
+        """
+        phase_key = phase.value
+        self.phase_attempts[phase_key] = self.phase_attempts.get(phase_key, 0) + 1
+        if phase_key not in self.failed_phases:
+            self.failed_phases.append(phase_key)
+        logger.warning(
+            "Phase %s failed (attempt %d/%d): %s",
+            phase_key,
+            self.phase_attempts[phase_key],
+            self.max_retries,
+            error,
+        )
+
+    def can_retry_phase(self, phase: WorkflowPhase) -> bool:
+        """Check if a phase can be retried (under max_retries).
+
+        Args:
+            phase: The phase to check.
+
+        Returns:
+            True if the phase has not exhausted its retry budget.
+        """
+        attempts = self.phase_attempts.get(phase.value, 0)
+        return attempts < self.max_retries
+
+    def retry_phase(self, phase: WorkflowPhase) -> None:
+        """Reset phase for retry. Preserves partial results.
+
+        Sets the current phase back to the given phase so it can be
+        re-executed. Does NOT clear partial_results for that phase.
+
+        Args:
+            phase: The phase to retry.
+
+        Raises:
+            WorkflowError: If the phase has exhausted its retry budget.
+        """
+        if not self.can_retry_phase(phase):
+            raise WorkflowError(
+                f"Phase {phase.value} has exhausted its retry budget "
+                f"({self.max_retries} attempts)."
+            )
+        # Remove from completed so it can be re-run
+        if phase in self.completed_phases:
+            self.completed_phases.remove(phase)
+        self.current_phase = phase
+
+    def save_partial_results(self, phase: WorkflowPhase, results: dict[str, Any]) -> None:
+        """Save partial results from a partially completed phase.
+
+        Args:
+            phase: The phase whose partial results are being saved.
+            results: The partial results dict to store.
+        """
+        self.partial_results[phase.value] = results
+
+    def get_partial_results(self, phase: WorkflowPhase) -> dict[str, Any] | None:
+        """Get saved partial results for a phase (for resuming).
+
+        Args:
+            phase: The phase to retrieve partial results for.
+
+        Returns:
+            The partial results dict, or None if none were saved.
+        """
+        return self.partial_results.get(phase.value)
+
+    def get_monday_failure_status(self, failure_type: str) -> str:
+        """Get a Monday.com failure/waiting status string.
+
+        Args:
+            failure_type: One of 'waiting_for_client' or 'failed_manual'.
+
+        Returns:
+            Hebrew status string, or the standard phase status as fallback.
+        """
+        return MONDAY_FAILURE_STATUSES.get(failure_type, self.get_monday_status())
 
     def get_progress_summary(self) -> dict[str, Any]:
         """Get a summary of workflow progress.
