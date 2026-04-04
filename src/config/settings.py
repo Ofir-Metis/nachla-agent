@@ -33,6 +33,14 @@ class AppSettings(BaseSettings):
     onedrive_redirect_uri: str = "http://localhost:8000/auth/callback"
     google_drive_credentials_path: str = ""
 
+    # Agent settings
+    anthropic_model_main: str = "claude-sonnet-4-6"
+    anthropic_model_complex: str = "claude-opus-4-6"
+    mcp_config_path: str = ".mcp.json"
+    max_report_generation_time: int = 300  # seconds
+    max_tool_retries: int = 3
+    checkpoint_timeout: int = 0  # 0 = wait indefinitely for user confirmation
+
     # App config
     log_level: str = "INFO"
 
