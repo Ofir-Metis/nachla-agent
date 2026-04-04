@@ -49,7 +49,7 @@ app = FastAPI(
 )
 
 # CORS for Chainlit frontend
-_cors_origins = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:8000,http://localhost:3000").split(",")
+_cors_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:8000,http://localhost:3000").split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in _cors_origins],
@@ -64,5 +64,14 @@ app.include_router(router)
 
 @app.get("/health")
 async def health_check() -> dict[str, str]:
-    """Health check endpoint."""
+    """Basic health check endpoint (fast, for load balancers)."""
     return {"status": "ok", "service": "nachla-agent-api"}
+
+
+@app.get("/health/detailed")
+async def health_check_detailed() -> dict:
+    """Detailed health check with all subsystem statuses."""
+    from agent.health import HealthChecker
+
+    checker = HealthChecker()
+    return await checker.check_all()

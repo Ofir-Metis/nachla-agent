@@ -44,6 +44,24 @@ class AppSettings(BaseSettings):
     # App config
     log_level: str = "INFO"
 
+    # Database (Phase 5)
+    database_url: str = "sqlite+aiosqlite:///./nachla.db"
+    # Production: postgresql+asyncpg://user:pass@host/dbname
+
+    # Redis (Phase 5)
+    redis_url: str = "redis://localhost:6379/0"
+
+    # Security (Phase 5)
+    rbac_enabled: bool = False  # Enable in production
+    allowed_origins: str = "http://localhost:8000,http://localhost:3000"
+    rate_limit_per_minute: int = 60
+    max_upload_size_mb: int = 50
+
+    # Production
+    environment: str = "development"  # development | staging | production
+    app_version: str = "0.1.0"
+    output_directory: str = "./output"
+
     # Rates config (loaded from JSON, not from env)
     rates_config: dict[str, Any] = Field(default_factory=dict)
 
