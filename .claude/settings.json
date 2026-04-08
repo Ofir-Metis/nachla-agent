@@ -1,0 +1,56 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python *)",
+      "Bash(pip *)",
+      "Bash(pytest *)",
+      "Bash(git *)",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(docker *)",
+      "Bash(cd *)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(mkdir *)",
+      "Bash(sleep *)",
+      "Bash(curl *)",
+      "Bash(echo *)",
+      "Bash(kill *)",
+      "Bash(taskkill *)",
+      "Bash(tasklist *)",
+      "Bash(netstat *)",
+      "Read(*)",
+      "Edit(*)",
+      "Write(*)",
+      "Glob(*)",
+      "Grep(*)",
+      "Agent(*)",
+      "Skill(*)",
+      "TaskCreate",
+      "TaskUpdate",
+      "TaskGet",
+      "TaskList",
+      "WebSearch",
+      "WebFetch",
+      "mcp__chrome-devtools__*",
+      "mcp__playwright__*"
+    ],
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(git push --force *)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "exit 0"
+          }
+        ]
+      }
+    ]
+  }
+}
