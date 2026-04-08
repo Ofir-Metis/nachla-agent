@@ -78,18 +78,105 @@ class Job:
 
 
 class JobQueue:
-    """In-memory async job queue.
+    """Async job queue with optional database persistence.
 
     Manages job lifecycle including submission, status polling,
-    checkpoint pausing/resuming, and cleanup.
-
-    Production: replace with Redis/Celery (Phase 5).
+    checkpoint pausing/resuming, and cleanup. Writes state transitions
+    to PostgreSQL/SQLite when available.
     """
 
     def __init__(self) -> None:
         """Initialize the job queue."""
         self._jobs: dict[str, Job] = {}
         self._tasks: dict[str, asyncio.Task[None]] = {}
+        self._db_available: bool = False
+
+    async def init_db(self) -> None:
+        """Initialize database connection and recover stuck jobs."""
+        try:
+            from config.database import create_tables, get_session_factory
+            await create_tables()
+            self._db_available = True
+            logger.info("Database initialized for job persistence")
+            await self._recover_checkpoint_jobs()
+        except Exception as exc:
+            logger.warning("Database not available, using in-memory only: %s", exc)
+            self._db_available = False
+
+    async def _recover_checkpoint_jobs(self) -> None:
+        """Mark CHECKPOINT jobs as FAILED on restart (they can't be resumed)."""
+        if not self._db_available:
+            return
+        try:
+            from datetime import datetime, timezone
+            from config.database import get_session_factory, jobs_table
+            from sqlalchemy import update
+
+            factory = await get_session_factory()
+            async with factory() as session:
+                stmt = (
+                    update(jobs_table)
+                    .where(jobs_table.c.state == "checkpoint")
+                    .values(
+                        state="failed",
+                        error="שרת נכבה במהלך ממתין לאישור — יש להגיש מחדש",
+                        updated_at=datetime.now(timezone.utc),
+                    )
+                )
+                result = await session.execute(stmt)
+                await session.commit()
+                if result.rowcount > 0:
+                    logger.warning("Recovered %d stuck CHECKPOINT jobs → FAILED", result.rowcount)
+        except Exception as exc:
+            logger.error("Checkpoint recovery failed: %s", exc)
+
+    async def _persist_job(self, job: Job) -> None:
+        """Write job state to database (fire-and-forget)."""
+        if not self._db_available:
+            return
+        try:
+            from datetime import datetime, timezone
+            from config.database import get_session_factory, jobs_table
+            from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+            now = datetime.now(timezone.utc)
+            factory = await get_session_factory()
+            async with factory() as session:
+                # Upsert: try insert, on conflict update
+                values = {
+                    "id": job.id,
+                    "state": job.state,
+                    "phase": job.phase,
+                    "progress": job.progress,
+                    "owner_name": job.intake_data.get("owner_name", ""),
+                    "moshav_name": job.intake_data.get("moshav_name", ""),
+                    "gush": job.intake_data.get("gush", 0),
+                    "helka": job.intake_data.get("helka", 0),
+                    "intake_data": job.intake_data,
+                    "buildings": job.buildings or None,
+                    "result": job.result,
+                    "error": job.error,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+                # Use SQLite-compatible upsert
+                stmt = sqlite_insert(jobs_table).values(**values)
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=["id"],
+                    set_={
+                        "state": values["state"],
+                        "phase": values["phase"],
+                        "progress": values["progress"],
+                        "buildings": values["buildings"],
+                        "result": values["result"],
+                        "error": values["error"],
+                        "updated_at": now,
+                    },
+                )
+                await session.execute(stmt)
+                await session.commit()
+        except Exception as exc:
+            logger.warning("Failed to persist job %s to DB: %s", job.id, exc)
 
     async def submit(self, intake: dict[str, Any]) -> str:
         """Submit a new job.
@@ -105,6 +192,7 @@ class JobQueue:
         self._jobs[job_id] = job
 
         logger.info("Job %s submitted for %s", job_id, intake.get("owner_name", "unknown"))
+        await self._persist_job(job)
 
         # Start background processing
         task = asyncio.create_task(self._run_job(job_id))
@@ -158,6 +246,7 @@ class JobQueue:
         job._checkpoint_event.clear()
 
         logger.info("Job %s paused at classification checkpoint with %d buildings", job_id, len(buildings))
+        await self._persist_job(job)
 
         # Wait for user confirmation (blocks until resume_after_checkpoint is called)
         await job._checkpoint_event.wait()
@@ -212,6 +301,17 @@ class JobQueue:
             job.state = JobState.RUNNING
             settings = get_settings()
 
+            # Initialize Monday.com client (fire-and-forget, never blocks)
+            monday_client = None
+            monday_item_id = job.intake_data.get("monday_item_id")
+            if monday_item_id:
+                from integrations.monday_client import MondayClient
+                monday_client = MondayClient()
+                if monday_client.is_configured:
+                    asyncio.create_task(monday_client.update_status(monday_item_id, "בבדיקה"))
+                else:
+                    monday_client = None
+
             # --- Create agent ---
             agent = NachlaAgent(settings)
 
@@ -251,11 +351,15 @@ class JobQueue:
             job.phase = "taba_analysis"
             job.progress = 15
             tabas = await agent._run_taba_analysis(nachla)
+            if monday_client and monday_item_id:
+                asyncio.create_task(monday_client.update_status(monday_item_id, 'ניתוח תב"ע הושלם'))
 
             # --- Phase 3: Building mapping (uses LLM for document analysis) ---
             job.phase = "building_mapping"
             job.progress = 30
             buildings = await agent._run_building_mapping(nachla, uploaded_files)
+            if monday_client and monday_item_id:
+                asyncio.create_task(monday_client.update_status(monday_item_id, "מיפוי מבנים הושלם"))
 
             # --- Phase 3.4: Classification checkpoint ---
             if buildings:
@@ -282,6 +386,8 @@ class JobQueue:
             job.phase = "report"
             job.progress = 80
             job.state = JobState.GENERATING
+            if monday_client and monday_item_id:
+                asyncio.create_task(monday_client.update_status(monday_item_id, "טיוטה מוכנה"))
             report_data = await agent._build_report_data(nachla, buildings, tabas, calc_results)
 
             # --- Phase 13: Review (sanity checks) ---
@@ -350,16 +456,72 @@ class JobQueue:
                 "cost_estimate": llm_client.estimate_cost() if llm_client else {},
             }
             logger.info("Job %s: complete", job_id)
+            await self._persist_job(job)
+            if monday_client and monday_item_id:
+                asyncio.create_task(monday_client.update_status(monday_item_id, "מאושר"))
+                # Attach report files
+                if word_path:
+                    asyncio.create_task(monday_client.attach_file(monday_item_id, word_path))
 
         except asyncio.CancelledError:
             job.state = JobState.FAILED
             job.error = "העבודה בוטלה"
             logger.warning("Job %s cancelled", job_id)
+            await self._persist_job(job)
         except Exception as exc:
             job.state = JobState.FAILED
             job.phase = "failed"
             job.error = str(exc)
             logger.exception("Job %s failed: %s", job_id, exc)
+            await self._persist_job(job)
+            if monday_client and monday_item_id:
+                asyncio.create_task(monday_client.update_status(monday_item_id, "נכשל - דורש טיפול ידני"))
+
+    async def list_jobs(self) -> list[dict[str, Any]]:
+        """List all jobs, combining in-memory and DB sources.
+
+        Returns:
+            List of job summary dicts.
+        """
+        summaries: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+
+        # In-memory jobs (current session)
+        for job in self._jobs.values():
+            summaries.append({
+                "job_id": job.id,
+                "owner_name": job.intake_data.get("owner_name", ""),
+                "moshav_name": job.intake_data.get("moshav_name", ""),
+                "status": job.state,
+                "phase": job.phase,
+                "created_at": None,
+            })
+            seen_ids.add(job.id)
+
+        # DB jobs from previous sessions
+        if self._db_available:
+            try:
+                from config.database import get_session_factory, jobs_table
+                from sqlalchemy import select
+
+                factory = await get_session_factory()
+                async with factory() as session:
+                    stmt = select(jobs_table).order_by(jobs_table.c.created_at.desc()).limit(100)
+                    result = await session.execute(stmt)
+                    for row in result:
+                        if row.id not in seen_ids:
+                            summaries.append({
+                                "job_id": row.id,
+                                "owner_name": row.owner_name,
+                                "moshav_name": row.moshav_name,
+                                "status": row.state,
+                                "phase": row.phase,
+                                "created_at": row.created_at.isoformat() if row.created_at else None,
+                            })
+            except Exception as exc:
+                logger.warning("Failed to list DB jobs: %s", exc)
+
+        return summaries
 
     async def cancel_job(self, job_id: str) -> bool:
         """Cancel a running job.

@@ -76,6 +76,43 @@ export async function uploadFiles(
   }
 }
 
+/** POST /api/v1/jobs/{id}/files — upload with progress via XMLHttpRequest */
+export function uploadFilesWithProgress(
+  jobId: string,
+  files: Record<string, File>,
+  onProgress: (percent: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const formData = new FormData();
+    for (const [_key, file] of Object.entries(files)) {
+      formData.append("files", file);
+    }
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${BASE_URL}/api/v1/jobs/${jobId}/files`);
+
+    xhr.upload.addEventListener("progress", (e) => {
+      if (e.lengthComputable) {
+        onProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    });
+
+    xhr.addEventListener("load", () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+      } else {
+        reject(new ApiError("שגיאה בהעלאת הקבצים. אנא נסו שנית.", xhr.status));
+      }
+    });
+
+    xhr.addEventListener("error", () => {
+      reject(new ApiError("שגיאה בהעלאת הקבצים. אנא נסו שנית.", 0));
+    });
+
+    xhr.send(formData);
+  });
+}
+
 /** GET /api/v1/jobs/{id}/status — poll job progress */
 export async function fetchJobStatus(jobId: string): Promise<JobStatusResponse> {
   return request<JobStatusResponse>(`/api/v1/jobs/${jobId}/status`);
@@ -150,13 +187,15 @@ const MOCK_JOBS: JobSummary[] = [
   },
 ];
 
-/** GET /api/v1/jobs — list all jobs (falls back to mock data in development) */
+/** GET /api/v1/jobs — list all jobs (falls back to mock data in development only) */
 export async function fetchJobs(): Promise<JobSummary[]> {
   try {
     return await request<JobSummary[]>("/api/v1/jobs");
-  } catch {
-    // Fallback to mock data when the endpoint is not yet available
-    return MOCK_JOBS;
+  } catch (err) {
+    if (import.meta.env.DEV) {
+      return MOCK_JOBS;
+    }
+    throw err;
   }
 }
 

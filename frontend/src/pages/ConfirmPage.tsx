@@ -2,16 +2,20 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useWizardContext } from "@/context/WizardContext";
 import { intakeSchema } from "@/schemas/intake";
-import { submitIntake, uploadFiles } from "@/lib/api";
+import { submitIntake, uploadFilesWithProgress } from "@/lib/api";
 import ConfirmGrid from "@/components/confirm/ConfirmGrid";
 import FocusManager from "@/components/ui/FocusManager";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import type { IntakeData } from "@/types";
 
 export default function ConfirmPage() {
   const navigate = useNavigate();
   const { formData, files, setJobId, clearDraft } = useWizardContext();
 
+  const isOnline = useOnlineStatus();
   const [submitting, setSubmitting] = useState(false);
+  const [submitPhase, setSubmitPhase] = useState<"data" | "files" | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Route guard: redirect if form data is empty
@@ -39,6 +43,7 @@ export default function ConfirmPage() {
       setSubmitting(true);
 
       // 1. Submit intake data
+      setSubmitPhase("data");
       const response = await submitIntake(parsed.data as IntakeData);
       const jobId = response.job_id;
 
@@ -49,7 +54,9 @@ export default function ConfirmPage() {
       }
 
       if (Object.keys(validFiles).length > 0) {
-        await uploadFiles(jobId, validFiles);
+        setSubmitPhase("files");
+        setUploadProgress(0);
+        await uploadFilesWithProgress(jobId, validFiles, setUploadProgress);
       }
 
       // 3. Update context and clear draft
@@ -66,6 +73,8 @@ export default function ConfirmPage() {
       setError(message);
     } finally {
       setSubmitting(false);
+      setSubmitPhase(null);
+      setUploadProgress(null);
     }
   };
 
@@ -102,7 +111,7 @@ export default function ConfirmPage() {
         <ConfirmGrid formData={formData} fileCount={fileCount} />
 
         {/* Navigation */}
-        <div className="flex flex-col-reverse sm:flex-row gap-3 mt-6 sm:mt-8 pt-5 sm:pt-6 border-t border-[#D8D0C4]">
+        <div className="flex flex-col-reverse sm:flex-row gap-3 mt-6 sm:mt-8 pt-5 sm:pt-6 border-t border-[#D8D0C4] max-sm:sticky max-sm:bottom-0 max-sm:bg-[rgba(255,253,248,0.95)] max-sm:backdrop-blur-sm max-sm:z-20 max-sm:pb-3 max-sm:-mx-5 max-sm:px-5">
           {/* Back button */}
           <button
             type="button"
@@ -118,13 +127,17 @@ export default function ConfirmPage() {
           <button
             type="button"
             onClick={handleStartProcessing}
-            disabled={submitting}
+            disabled={submitting || !isOnline}
             className="sm:ms-auto px-8 py-3 sm:py-3.5 rounded-[--radius-md] font-semibold text-[0.95rem] sm:text-base bg-success text-white shadow-[--shadow-sm] hover:brightness-110 hover:shadow-[--shadow-md] hover:-translate-y-px active:translate-y-0 transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting ? (
               <>
                 <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <span>שולח...</span>
+                <span>
+                  {submitPhase === "files" && uploadProgress !== null
+                    ? `מעלה קבצים... ${uploadProgress}%`
+                    : "שולח נתונים..."}
+                </span>
               </>
             ) : (
               <span>התחל ניתוח</span>

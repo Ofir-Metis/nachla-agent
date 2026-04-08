@@ -34,11 +34,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     # Startup
     logger.info("Nachla Agent API starting up")
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        logger.warning("ANTHROPIC_API_KEY not set — job submissions will fail")
     app.state.job_queue = job_queue
+    await job_queue.init_db()
     yield
     # Shutdown
     logger.info("Nachla Agent API shutting down")
     await job_queue.shutdown()
+    from config.database import dispose_engine
+    await dispose_engine()
 
 
 app = FastAPI(

@@ -160,7 +160,46 @@ class Building(BaseModel):
 
     @model_validator(mode="after")
     def validate_pergola_roof(self) -> Building:
-        """Ensure pergola_roof_type is set for pergola buildings."""
+        """Ensure pergola_roof_type is set for pergola buildings or when pergola_area > 0."""
         if self.building_type == BuildingType.PERGOLA and self.pergola_roof_type is None:
             raise ValueError("pergola_roof_type must be specified for pergola buildings")
+        if self.pergola_area_sqm > 0 and self.pergola_roof_type is None:
+            raise ValueError("pergola_roof_type must be specified when pergola_area_sqm > 0")
+        return self
+
+    @model_validator(mode="after")
+    def validate_pre_1965_year_conflict(self) -> Building:
+        """Ensure is_pre_1965=True is not set with construction_year >= 1965."""
+        if self.is_pre_1965 and self.construction_year is not None and self.construction_year >= 1965:
+            raise ValueError(
+                "is_pre_1965=True conflicts with construction_year >= 1965. "
+                "Note: permit_year >= 1965 with is_pre_1965=True IS valid (expansion permit)."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_agricultural_no_kitchen(self) -> Building:
+        """Agricultural buildings cannot have a kitchen (would reclassify as residential)."""
+        if self.building_type == BuildingType.AGRICULTURAL and self.has_kitchen is True:
+            raise ValueError("agricultural building cannot have a kitchen — reclassify as residential")
+        return self
+
+    @model_validator(mode="after")
+    def validate_pool_no_basement(self) -> Building:
+        """Pools cannot have basements."""
+        if self.building_type == BuildingType.POOL and self.basement_area_sqm > 0:
+            raise ValueError("pool buildings cannot have basement_area_sqm > 0")
+        return self
+
+    @model_validator(mode="after")
+    def validate_deviation_not_excessive(self) -> Building:
+        """Flag suspiciously large deviations (deviation > main area)."""
+        if (
+            self.deviation_sqm is not None
+            and self.deviation_sqm > 0
+            and self.deviation_sqm > self.main_area_sqm
+        ):
+            raise ValueError(
+                f"deviation_sqm ({self.deviation_sqm}) exceeds main_area_sqm ({self.main_area_sqm}) — suspicious"
+            )
         return self

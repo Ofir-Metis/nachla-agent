@@ -16,7 +16,7 @@ export default function FormNav({
   nextDisabled = false,
 }: FormNavProps) {
   return (
-    <div className="flex flex-col-reverse sm:flex-row gap-3 mt-5 sm:mt-6 pt-4 sm:pt-5 border-t border-[#D8D0C4]">
+    <div className="flex flex-col-reverse sm:flex-row gap-3 mt-5 sm:mt-6 pt-4 sm:pt-5 border-t border-[#D8D0C4] max-sm:sticky max-sm:bottom-0 max-sm:bg-[rgba(255,253,248,0.95)] max-sm:backdrop-blur-sm max-sm:border-t max-sm:border-[#D8D0C4] max-sm:z-20 max-sm:pb-3 max-sm:-mx-5 max-sm:px-5">
       {/* Back button (right side in RTL) */}
       {showBack && (
         <button

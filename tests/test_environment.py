@@ -70,7 +70,7 @@ def test_project_structure():
         "src/models",
         "src/config",
         "src/api",
-        "src/ui",
+
         "src/documents",
         "src/integrations",
         "src/agent",
@@ -125,7 +125,7 @@ def test_init_files_exist():
     """All Python packages have __init__.py."""
     packages = [
         "src", "src/tools", "src/models", "src/config", "src/api",
-        "src/ui", "src/documents", "src/integrations", "src/agent",
+        "src/documents", "src/integrations", "src/agent",
     ]
     for pkg in packages:
         init_path = os.path.join(pkg, "__init__.py")

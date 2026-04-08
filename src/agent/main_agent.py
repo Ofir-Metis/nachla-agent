@@ -29,7 +29,7 @@ from config.settings import AppSettings, get_settings
 from models.building import Building, BuildingStatus, BuildingType
 from models.nachla import ClientGoal, Nachla, PriorityArea
 from models.report import ReportData
-from models.taba import Taba
+from models.taba import Taba, resolve_primary_taba
 
 logger = logging.getLogger(__name__)
 
@@ -226,48 +226,61 @@ class NachlaAgent:
         Each tool function is wrapped in a ToolDescriptor with its name,
         Hebrew name, description, and auto-extracted parameter schema.
         """
+        # Required tools — agent cannot function without these
+        from tools.calc_dmei_heter import (
+            calculate_building_permit_fees,
+            calculate_dmei_heter,
+            check_permit_fee_cap,
+        )
+        from tools.calc_dmei_shimush import calculate_dmei_shimush
+        from tools.calc_hivun import (
+            calculate_hivun_33,
+            calculate_hivun_375,
+            compare_tracks,
+        )
+        from tools.calc_sqm_equivalent import (
+            calculate_hivun_375_sqm,
+            calculate_nachla_sqm_equivalent,
+            calculate_potential_sqm,
+            calculate_sqm_equivalent,
+        )
+        from tools.priority_areas import (
+            get_discount,
+            get_hivun_33_rate,
+            get_priority_area,
+            get_usage_rate,
+        )
+
+        # Optional tools — skip with warning if unavailable
         try:
-            from tools.calc_dmei_heter import (
-                calculate_building_permit_fees,
-                calculate_dmei_heter,
-                check_permit_fee_cap,
-            )
-            from tools.calc_dmei_shimush import calculate_dmei_shimush
             from tools.calc_hetel_hashbacha import (
                 calculate_betterment_levy,
                 calculate_partial_betterment,
                 estimate_split_betterment,
             )
-            from tools.calc_hivun import (
-                calculate_hivun_33,
-                calculate_hivun_375,
-                compare_tracks,
-            )
+        except ImportError:
+            logger.warning("Betterment levy tools not available; skipping.")
+            calculate_betterment_levy = None
+            calculate_partial_betterment = None
+            estimate_split_betterment = None
+
+        try:
             from tools.calc_pitzul import (
                 calculate_remaining_rights,
                 calculate_split_cost,
                 check_split_eligibility,
             )
-            from tools.calc_sqm_equivalent import (
-                calculate_hivun_375_sqm,
-                calculate_nachla_sqm_equivalent,
-                calculate_potential_sqm,
-                calculate_sqm_equivalent,
-            )
-            from tools.lookup_tables import (
-                lookup_development_costs,
-                lookup_plach_rate,
-                lookup_settlement_shovi,
-            )
-            from tools.priority_areas import (
-                get_discount,
-                get_hivun_33_rate,
-                get_priority_area,
-                get_usage_rate,
-            )
         except ImportError:
-            logger.warning("Calculation tools not available; registering stubs only.")
-            return
+            logger.warning("Split calculation tools not available; skipping.")
+            calculate_remaining_rights = None
+            calculate_split_cost = None
+            check_split_eligibility = None
+
+        from tools.lookup_tables import (
+            lookup_development_costs,
+            lookup_plach_rate,
+            lookup_settlement_shovi,
+        )
 
         tool_defs: list[tuple[str, str, str, Callable[..., Any]]] = [
             # Permit fees
@@ -390,6 +403,9 @@ class NachlaAgent:
         ]
 
         for name, name_he, description, func in tool_defs:
+            if func is None:
+                logger.info("Skipping optional tool %s (module not available)", name)
+                continue
             self.tools[name] = ToolDescriptor(
                 name=name,
                 name_he=name_he,
@@ -583,6 +599,12 @@ class NachlaAgent:
                 source_name=f'תב"ע {taba.taba_number} - {taba.taba_name}',
                 source_date=taba.approval_date,
             )
+
+        # Resolve primary taba when multiple tabas apply
+        if len(tabas) > 1:
+            primary = resolve_primary_taba(tabas)
+            if primary:
+                logger.info("Resolved primary taba: %s (%s)", primary.taba_number, primary.taba_name)
 
         self.workflow.tabas = tabas
         self.workflow.complete_current_phase()
@@ -793,17 +815,35 @@ class NachlaAgent:
         if agricultural_buildings:
             self.workflow.advance(WorkflowPhase.AGRICULTURAL)
             logger.info("Step 10: Processing %d agricultural buildings", len(agricultural_buildings))
+            ag_results: dict[str, Any] = {"buildings": {}}
+            for ag_building in agricultural_buildings:
+                ag_results["buildings"][ag_building.id] = {
+                    "name": ag_building.name,
+                    "area_sqm": ag_building.main_area_sqm,
+                    "permit_fees": 0.0,
+                    "permit_fee_note": "מבנה חקלאי - פטור מלא מדמי היתר",
+                    "usage_rate": 0.02,
+                    "usage_rate_note": "מבנה חקלאי - 2% דמי שימוש",
+                }
+            results["agricultural"] = ag_results
+            self.workflow.calculation_results["agricultural"] = ag_results
             self.workflow.complete_current_phase()
         else:
             self.workflow.skip_phase(WorkflowPhase.AGRICULTURAL)
 
-        # Step 11: Betterment levy (optional)
-        self.workflow.advance(WorkflowPhase.BETTERMENT)
-        logger.info("Step 11: Calculating betterment levy")
-        betterment_results = await self._calc_betterment(nachla, buildings)
-        results["betterment"] = betterment_results
-        self.workflow.calculation_results["betterment"] = betterment_results
-        self.workflow.complete_current_phase()
+        # Step 11: Betterment levy (conditional — only when non-compliant buildings exist)
+        has_non_compliant = any(b.status != BuildingStatus.COMPLIANT for b in buildings)
+        if has_non_compliant:
+            self.workflow.advance(WorkflowPhase.BETTERMENT)
+            logger.info("Step 11: Calculating betterment levy (%d non-compliant buildings)",
+                       sum(1 for b in buildings if b.status != BuildingStatus.COMPLIANT))
+            betterment_results = await self._calc_betterment(nachla, buildings)
+            results["betterment"] = betterment_results
+            self.workflow.calculation_results["betterment"] = betterment_results
+            self.workflow.complete_current_phase()
+        else:
+            self.workflow.skip_phase(WorkflowPhase.BETTERMENT)
+            logger.info("Step 11: Skipping betterment levy — all buildings compliant")
 
         return results
 
@@ -892,6 +932,21 @@ class NachlaAgent:
             Capitalization calculation results.
         """
         results: dict[str, Any] = {}
+
+        # Look up development costs if regional council is available
+        dev_costs = 0.0
+        if nachla.regional_council:
+            try:
+                dev_result = await self.invoke_tool(
+                    "lookup_development_costs",
+                    {"regional_council": nachla.regional_council},
+                )
+                dev_costs = float(dev_result.get("development_costs", 0) or 0)
+                results["development_costs"] = dev_costs
+                logger.info("Development costs for %s: %s", nachla.regional_council, dev_costs)
+            except Exception as exc:
+                logger.warning("Development costs lookup failed: %s", exc)
+
         try:
             result_375 = await self.invoke_tool(
                 "calculate_hivun_375",
@@ -899,6 +954,7 @@ class NachlaAgent:
                     "sqm_equivalent": sqm_results.get("total_nachla_sqm", 808),
                     "shovi_meter_aku": sqm_results.get("shovi_meter_aku", 0),
                     "priority_area": nachla.priority_area.value,
+                    "development_costs": dev_costs,
                 },
             )
             results["hivun_375"] = result_375
@@ -916,6 +972,7 @@ class NachlaAgent:
                     "shovi_meter_aku": sqm_results.get("shovi_meter_aku", 0),
                     "prior_permit_fees": nachla.prior_permit_fees_purchased if nachla.prior_fees_deductible else 0,
                     "priority_area": nachla.priority_area.value,
+                    "development_costs": dev_costs,
                 },
             )
             results["hivun_33"] = result_33
@@ -1231,15 +1288,16 @@ class NachlaAgent:
             logger.error("LLM document analysis failed: %s", exc)
             return [], []
 
-        # Parse buildings
+        # Parse and validate buildings against Pydantic model
         buildings: list[Building] = []
         raw_buildings = result.get("buildings", [])
+        validation_errors: list[str] = []
         for i, raw in enumerate(raw_buildings):
             try:
                 raw.setdefault("id", i + 1)
                 raw.setdefault("building_order", i + 1)
                 raw.setdefault("user_confirmed", False)
-                building = Building(**raw)
+                building = Building.model_validate(raw)
                 buildings.append(building)
                 self.audit_logger.log_classification(
                     building_id=building.id,
@@ -1248,7 +1306,34 @@ class NachlaAgent:
                     reasoning=raw.get("reasoning", "Extracted from documents by AI"),
                 )
             except Exception as exc:
-                logger.warning("Failed to parse building %d from LLM: %s", i, exc)
+                logger.warning("Failed to validate building %d from LLM: %s", i, exc)
+                validation_errors.append(f"building {i}: {exc}")
+
+        # Retry once with validation errors fed back to Claude if we lost buildings
+        if validation_errors and self.llm_client and len(buildings) < len(raw_buildings):
+            logger.info("Retrying %d failed buildings with validation feedback", len(validation_errors))
+            try:
+                retry_result = await self.llm_client.analyze_document(
+                    system=self.system_prompt,
+                    document_text=combined_text,
+                    document_tables=all_tables,
+                    extraction_prompt=(
+                        f"Previous extraction had validation errors:\n"
+                        + "\n".join(validation_errors[:5])
+                        + "\n\nPlease fix and re-extract. Return JSON: {\"buildings\": [...]}"
+                    ),
+                )
+                for j, raw in enumerate(retry_result.get("buildings", [])):
+                    try:
+                        raw.setdefault("id", len(buildings) + j + 1)
+                        raw.setdefault("building_order", len(buildings) + j + 1)
+                        raw.setdefault("user_confirmed", False)
+                        building = Building.model_validate(raw)
+                        buildings.append(building)
+                    except Exception:
+                        pass  # Give up on this building
+            except Exception as exc:
+                logger.warning("Retry extraction failed: %s", exc)
 
         # Parse tabas
         tabas: list[Taba] = []

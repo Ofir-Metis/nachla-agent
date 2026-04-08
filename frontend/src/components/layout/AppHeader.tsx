@@ -1,9 +1,17 @@
 import { useWizardContext } from "@/context/WizardContext";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 
 export default function AppHeader() {
   const { jobId } = useWizardContext();
+  const isOnline = useOnlineStatus();
 
   return (
+    <>
+    {!isOnline && (
+      <div className="bg-wheat-600 text-white text-center text-[0.85rem] font-medium py-2 px-4 -mx-4 sm:-mx-6" dir="rtl">
+        אין חיבור לאינטרנט — חלק מהפעולות לא יהיו זמינות
+      </div>
+    )}
     <header className="flex items-center gap-3 sm:gap-3.5 py-3 sm:py-4 border-b border-[#D8D0C4] mb-4 sm:mb-5">
       <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-olive-700 to-olive-500 rounded-[--radius-md] flex items-center justify-center shrink-0 shadow-[--shadow-sm]">
         <svg className="w-6 h-6 sm:w-7 sm:h-7 fill-white" viewBox="0 0 24 24">
@@ -36,5 +44,6 @@ export default function AppHeader() {
         </a>
       </div>
     </header>
+    </>
   );
 }

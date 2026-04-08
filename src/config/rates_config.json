@@ -13,9 +13,9 @@
   },
   "permit_fee_rate": {
     "value": 0.91,
-    "effective_date": "2020-01-01",
+    "effective_date": "2024-01-01",
     "expiry_date": null,
-    "note": "RMI permit fee rate per decision 1523"
+    "note": "RMI permit fee rate per decision 1523. Reviewed 2026-04."
   },
   "hivun_375_rate": {
     "value": 0.0375,
@@ -161,9 +161,11 @@
     "pool": 0.3,
     "basement_service": 0.3,
     "basement_residential": 0.7,
+    "attic_usable": 1.0,
+    "attic_unusable": 0.0,
     "effective_date": "2020-01-01",
     "expiry_date": null,
-    "note": "Coefficients for equivalent sqm calculation (nachla valuation)"
+    "note": "Coefficients for equivalent sqm calculation. Attic: usable (>1.80m) = 1.0, unusable (<=1.80m) = 0.0"
   },
   "permit_fee_coefficients": {
     "main": 1.0,
@@ -172,9 +174,11 @@
     "basement_service": 0.3,
     "basement_residential": 0.7,
     "mamad": 0.9,
+    "attic_usable": 1.0,
+    "attic_unusable": 0.0,
     "effective_date": "2020-01-01",
     "expiry_date": null,
-    "note": "Coefficients for permit fee calculation by area type"
+    "note": "Coefficients for permit fee calculation. Attic: usable (>1.80m) = 1.0, unusable (<=1.80m) = 0.0"
   },
   "usage_fee_coefficients": {
     "main": 1.0,
@@ -189,5 +193,19 @@
     "effective_date": "2020-01-01",
     "expiry_date": null,
     "note": "Maximum effective yard area (sqm) before applying remainder coefficient"
+  },
+  "attic_coefficients": {
+    "attic_usable": 1.0,
+    "attic_unusable": 0.0,
+    "effective_date": "2020-01-01",
+    "expiry_date": null,
+    "note": "Attic coefficients: usable (height > 1.80m) = 1.0, unusable (height <= 1.80m) = 0.0"
+  },
+  "decision_1553_caps": {
+    "priority_cap_per_unit": 450000,
+    "priority_cap_two_units": 900000,
+    "effective_date": "2023-01-01",
+    "expiry_date": null,
+    "note": "Decision 1553: permit fee caps for priority area settlements. Per housing unit and two-unit cap."
   }
 }

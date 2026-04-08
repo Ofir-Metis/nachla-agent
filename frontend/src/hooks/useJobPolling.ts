@@ -112,8 +112,20 @@ export function useJobPolling(jobId: string | undefined) {
     refetchInterval: (query) => {
       const status = query.state.data?.status;
       if (status === "complete" || status === "failed") return false;
+      // Slow down polling after errors
+      if (query.state.error) return 10_000;
       return 2000;
     },
+    retry: (failureCount, error) => {
+      // Don't retry client errors (4xx)
+      if (error instanceof Error && "status" in error) {
+        const status = (error as { status: number }).status;
+        if (status >= 400 && status < 500) return false;
+      }
+      // Exponential backoff for server errors, max 3 retries
+      return failureCount < 3;
+    },
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30_000),
     enabled: !!jobId,
   });
 

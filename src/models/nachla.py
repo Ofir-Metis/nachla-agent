@@ -85,6 +85,9 @@ class Nachla(BaseModel):
         default=PriorityArea.NONE, description="אזור עדיפות לאומית - מזוהה אוטומטית לפי מושב"
     )
 
+    # Regional council (for development cost lookups)
+    regional_council: str | None = Field(default=None, description="מועצה אזורית (לחישוב עלויות פיתוח)")
+
     # Prior permit fees (expert review #23: only post-2009 counts for 33% deduction)
     prior_permit_fees_purchased: float = Field(default=0, ge=0, description='דמי היתר שנרכשו בעבר (בש"ח)')
     prior_permit_fees_date: int | None = Field(

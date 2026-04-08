@@ -5,6 +5,8 @@ and returns applicable discount factors for each payment type.
 """
 
 import json
+import re
+import unicodedata
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -19,80 +21,61 @@ def _load_config() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Settlement -> priority area mapping
-# NOTE: This is a SAMPLE dict (~20 per area). In production, load the full
-# list of ~450 moshavim from a reference Excel / DB table.
+# Settlement -> priority area mapping (loaded from reference JSON)
 # ---------------------------------------------------------------------------
 
-_PRIORITY_AREA_MAP: dict[str, str] = {
-    # Area A (periphery - deep south / north)
-    "ירוחם": "A",
-    "ערד": "A",
-    "מצפה רמון": "A",
-    "שדה בוקר": "A",
-    "רביבים": "A",
-    "כסייפה": "A",
-    "נאות הכיכר": "A",
-    "באר מילכה": "A",
-    "עין יהב": "A",
-    "פארן": "A",
-    "צופר": "A",
-    "עידן": "A",
-    "חצבה": "A",
-    "ספיר": "A",
-    "יטבתה": "A",
-    "קטורה": "A",
-    "אליפז": "A",
-    "לוטן": "A",
-    "גרופית": "A",
-    "שיזפון": "A",
-    # Area B (moderate periphery)
-    "קריית שמונה": "B",
-    "מטולה": "B",
-    "שלומי": "B",
-    "מעלות תרשיחא": "B",
-    "חצור הגלילית": "B",
-    "צפת": "B",
-    "טבריה": "B",
-    "בית שאן": "B",
-    "עפולה": "B",
-    "מגדל העמק": "B",
-    "נצרת עילית": "B",
-    "כרמיאל": "B",
-    "עכו": "B",
-    "דימונה": "B",
-    "אופקים": "B",
-    "נתיבות": "B",
-    "שדרות": "B",
-    "ירוחם": "A",  # override stays A
-    "מעלה אדומים": "B",
-    "אריאל": "B",
-    # Frontline (kav imut - border communities)
-    "שתולה": "frontline",
-    "מנרה": "frontline",
-    "מרגליות": "frontline",
-    "יפתח": "frontline",
-    "דובב": "frontline",
-    "אביבים": "frontline",
-    "מלכיה": "frontline",
-    "נטועה": "frontline",
-    "זרעית": "frontline",
-    "שומרה": "frontline",
-    "בצת": "frontline",
-    "כפר גלעדי": "frontline",
-    "דן": "frontline",
-    "סנהדריה": "frontline",
-    "מסגב": "frontline",
-    "נירים": "frontline",
-    "כיסופים": "frontline",
-    "עין השלושה": "frontline",
-    "נחל עוז": "frontline",
-    "כרם שלום": "frontline",
-}
+_SETTLEMENTS_FILE = Path(__file__).parent.parent.parent / "data" / "reference" / "settlements_priority.json"
+
+_settlement_cache: dict[str, str] | None = None
+
+
+def _normalize_hebrew(name: str) -> str:
+    """Normalize a Hebrew settlement name for fuzzy matching.
+
+    Strips niqqud (vowel marks), normalizes whitespace, removes
+    quotes and hyphens, and lowercases.
+    """
+    # Remove niqqud (Hebrew points in Unicode range 0x0591-0x05C7)
+    cleaned = ""
+    for ch in name:
+        if unicodedata.category(ch) in ("Mn",):  # Mark, Nonspacing (niqqud)
+            continue
+        cleaned += ch
+    # Remove quotes, hyphens, double-quotes
+    cleaned = re.sub(r'["\'\-–—]', "", cleaned)
+    # Normalize whitespace
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+
+def _load_settlements() -> dict[str, str]:
+    """Load and cache settlement priority area map from JSON reference."""
+    global _settlement_cache
+    if _settlement_cache is not None:
+        return _settlement_cache
+
+    _settlement_cache = {}
+
+    if _SETTLEMENTS_FILE.exists():
+        with open(_SETTLEMENTS_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        raw = data.get("settlements", {})
+        for name, area in raw.items():
+            if isinstance(area, str) and area in ("A", "B", "frontline"):
+                _settlement_cache[_normalize_hebrew(name)] = area
+    else:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Settlement priority file not found: %s", _SETTLEMENTS_FILE
+        )
+
+    return _settlement_cache
 
 
 def get_priority_area(settlement_name: str) -> str | None:
     """Look up the national priority area for a settlement.
+
+    Uses fuzzy matching: strips niqqud, normalizes whitespace and punctuation.
 
     Args:
         settlement_name: Name of the settlement (Hebrew).
@@ -103,9 +86,20 @@ def get_priority_area(settlement_name: str) -> str | None:
     """
     if not settlement_name or not isinstance(settlement_name, str):
         return None
-    # Strip whitespace for fuzzy-ish matching
-    clean = settlement_name.strip()
-    return _PRIORITY_AREA_MAP.get(clean)
+
+    settlements = _load_settlements()
+    normalized = _normalize_hebrew(settlement_name)
+
+    # Exact match after normalization
+    if normalized in settlements:
+        return settlements[normalized]
+
+    # Partial match: check if input is a substring of a known settlement or vice versa
+    for key, area in settlements.items():
+        if normalized in key or key in normalized:
+            return area
+
+    return None
 
 
 def get_discount(priority_area: str | None, payment_type: str) -> float:

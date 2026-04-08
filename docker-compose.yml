@@ -48,7 +48,8 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - app
+      app:
+        condition: service_healthy
     restart: unless-stopped
     deploy:
       resources:

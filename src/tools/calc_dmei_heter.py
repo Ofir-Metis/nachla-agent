@@ -257,19 +257,24 @@ def check_permit_fee_cap(
     total_fees: float,
     nachla_total_rights_sqm: float | None = None,
     shovi_per_sqm: float | None = None,
+    priority_area: str | None = None,
+    num_housing_units: int = 1,
     effective_date: str | None = None,
 ) -> dict:
-    """Check if total permit fees exceed the decision 1523 cap.
+    """Check if total permit fees exceed the decision 1523/1553 cap.
 
-    The cap mechanism limits total permit fees per nachla.
-    NOTE: The exact cap formula depends on RMI decision parameters that
-    may change. This function flags when fees seem high and recommends
-    verification with RMI.
+    Two cap mechanisms:
+    1. Decision 1523: cap = total_rights * shovi * permit_rate * (1+vat)
+    2. Decision 1553: for priority areas, fixed caps per housing unit
+
+    The lower of the two caps applies.
 
     Args:
         total_fees: Sum of all permit fees for the nachla.
-        nachla_total_rights_sqm: Total taba rights (for cap calculation).
+        nachla_total_rights_sqm: Total taba rights (for 1523 cap calculation).
         shovi_per_sqm: Equivalent sqm value.
+        priority_area: "A", "B", "frontline", or None.
+        num_housing_units: Number of housing units (1 or 2).
         effective_date: Optional date string.
 
     Returns:
@@ -279,36 +284,69 @@ def check_permit_fee_cap(
     permit_rate = float(config["permit_fee_rate"]["value"])
     vat_rate = float(config["vat_rate"]["value"])
 
-    cap_value = None
-    exceeds_cap = False
+    cap_1523 = None
+    cap_1553 = None
+    effective_cap = None
 
+    # Decision 1523 cap
     if nachla_total_rights_sqm is not None and shovi_per_sqm is not None:
-        # Cap = total rights * shovi * permit_rate * (1+vat)
-        cap_value = nachla_total_rights_sqm * shovi_per_sqm * permit_rate * (1 + vat_rate)
-        exceeds_cap = total_fees > cap_value
+        cap_1523 = nachla_total_rights_sqm * shovi_per_sqm * permit_rate * (1 + vat_rate)
+
+    # Decision 1553 cap (priority areas only)
+    if priority_area in ("A", "B", "frontline"):
+        caps_1553 = config.get("decision_1553_caps", {})
+        if num_housing_units >= 2:
+            cap_1553 = float(caps_1553.get("priority_cap_two_units", 900000))
+        else:
+            cap_1553 = float(caps_1553.get("priority_cap_per_unit", 450000))
+
+    # Determine effective cap (lowest applicable)
+    caps = [c for c in (cap_1523, cap_1553) if c is not None]
+    if caps:
+        effective_cap = min(caps)
+
+    exceeds_cap = effective_cap is not None and total_fees > effective_cap
+    capped_fees = min(total_fees, effective_cap) if effective_cap is not None else total_fees
+
+    if exceeds_cap:
+        if effective_cap == cap_1553:
+            recommendation = (
+                f"סה\"כ דמי ההיתר חורגים מתקרת החלטה 1553 ({effective_cap:,.0f} ש\"ח). "
+                "הסכום הוגבל לתקרה."
+            )
+        else:
+            recommendation = (
+                f"סה\"כ דמי ההיתר חורגים מתקרת החלטה 1523 ({effective_cap:,.0f} ש\"ח). "
+                "יש לבדוק מול רמ\"י."
+            )
+    elif effective_cap is not None:
+        recommendation = "דמי ההיתר בגבולות התקרה."
+    else:
+        recommendation = "לא ניתן לחשב תקרה - חסרים נתוני זכויות ושווי."
 
     return {
         "result": {
             "total_fees": round(total_fees, 2),
-            "cap_value": round(cap_value, 2) if cap_value is not None else None,
+            "capped_fees": round(capped_fees, 2),
+            "cap_1523": round(cap_1523, 2) if cap_1523 is not None else None,
+            "cap_1553": round(cap_1553, 2) if cap_1553 is not None else None,
+            "effective_cap": round(effective_cap, 2) if effective_cap is not None else None,
             "exceeds_cap": exceeds_cap,
-            "recommendation": (
-                "סה\"כ דמי ההיתר חורגים מתקרת החלטה 1523. יש לבדוק מול רמ\"י."
-                if exceeds_cap
-                else "דמי ההיתר בגבולות התקרה."
-                if cap_value is not None
-                else "לא ניתן לחשב תקרה - חסרים נתוני זכויות ושווי."
-            ),
+            "recommendation": recommendation,
         },
-        "formula": "cap = total_rights_sqm * shovi * permit_rate * (1 + vat)",
+        "formula": "effective_cap = min(decision_1523_cap, decision_1553_cap)",
         "rates_used": {
             "permit_rate": permit_rate,
             "vat_rate": vat_rate,
+            "priority_area": priority_area,
+            "num_housing_units": num_housing_units,
             "effective_date": effective_date or "current",
         },
         "inputs": {
             "total_fees": total_fees,
             "nachla_total_rights_sqm": nachla_total_rights_sqm,
             "shovi_per_sqm": shovi_per_sqm,
+            "priority_area": priority_area,
+            "num_housing_units": num_housing_units,
         },
     }

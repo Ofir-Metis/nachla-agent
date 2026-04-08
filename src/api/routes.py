@@ -7,6 +7,7 @@ Error responses include Hebrew messages for user-facing errors.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile
@@ -152,6 +153,20 @@ def _validate_file_extension(filename: str) -> bool:
 # --- Endpoints ---
 
 
+@router.get("/jobs")
+async def list_jobs(request: Request) -> list[dict]:
+    """List all jobs (current session + DB history).
+
+    Args:
+        request: FastAPI request.
+
+    Returns:
+        List of job summaries.
+    """
+    queue = _get_job_queue(request)
+    return await queue.list_jobs()
+
+
 @router.post("/jobs", response_model=JobCreateResponse)
 async def create_job(intake: IntakeRequest, request: Request) -> JobCreateResponse:
     """Submit a new feasibility study job.
@@ -163,6 +178,12 @@ async def create_job(intake: IntakeRequest, request: Request) -> JobCreateRespon
     Returns:
         Job creation response with job_id.
     """
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        raise HTTPException(
+            status_code=503,
+            detail="שירות AI אינו זמין כרגע — חסר מפתח API. אנא פנו למנהל המערכת.",
+        )
+
     queue = _get_job_queue(request)
     job_id = await queue.submit(intake.model_dump())
 
@@ -428,7 +449,7 @@ async def get_labels() -> dict[str, dict[str, str]]:
     Returns:
         Dict with all label dicts as nested objects.
     """
-    from ui.components import (
+    from api.labels import (
         AUTH_TYPE_LABELS,
         BUILDING_STATUS_LABELS,
         BUILDING_TYPE_LABELS,
@@ -513,6 +534,15 @@ async def download_report(job_id: str, file_type: str, request: Request) -> File
     from pathlib import Path as _Path
 
     resolved = _Path(file_path).resolve()
+
+    # Verify path is within the output directory to prevent path traversal
+    output_root = _Path(os.getenv("OUTPUT_DIRECTORY", "output")).resolve()
+    if not str(resolved).startswith(str(output_root)):
+        raise HTTPException(
+            status_code=403,
+            detail="גישה לקובץ נדחתה — הנתיב מחוץ לתיקיית הפלט.",
+        )
+
     if not resolved.is_file():
         raise HTTPException(status_code=404, detail="קובץ לא נמצא במערכת.")
 
@@ -542,8 +572,8 @@ async def cloud_export(job_id: str, target: str, request: Request) -> dict:
             detail=f'יעד שמירה לא תקין. אפשרויות: {", ".join(sorted(valid_targets))}',
         )
 
-    job_queue: JobQueue = request.app.state.job_queue
-    job = job_queue.get_job(job_id)
+    job_queue = _get_job_queue(request)
+    job = await job_queue.get_status(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="העבודה לא נמצאה.")
     if job.state != "complete" or job.result is None:
@@ -555,6 +585,12 @@ async def cloud_export(job_id: str, target: str, request: Request) -> dict:
     for t in targets:
         try:
             if t == "gdrive":
+                if not os.getenv("GOOGLE_CREDENTIALS_PATH"):
+                    results.setdefault("errors", []).append({
+                        "service": "gdrive",
+                        "error": "חסרים פרטי התחברות ל-Google Drive. אנא הגדירו GOOGLE_CREDENTIALS_PATH.",
+                    })
+                    continue
                 from integrations.gdrive_client import GoogleDriveClient
 
                 client = GoogleDriveClient()
@@ -565,6 +601,12 @@ async def cloud_export(job_id: str, target: str, request: Request) -> dict:
                         results["files"].append({"service": "gdrive", "file": key, "link": link})
 
             elif t == "onedrive":
+                if not os.getenv("ONEDRIVE_CLIENT_ID"):
+                    results.setdefault("errors", []).append({
+                        "service": "onedrive",
+                        "error": "חסרים פרטי התחברות ל-OneDrive. אנא הגדירו ONEDRIVE_CLIENT_ID.",
+                    })
+                    continue
                 from integrations.onedrive_client import OneDriveClient
 
                 client = OneDriveClient()

@@ -81,3 +81,70 @@ class Taba(BaseModel):
         if v not in allowed:
             raise ValueError(f"status must be one of {allowed}, got '{v}'")
         return v
+
+
+def resolve_primary_taba(tabas: list[Taba]) -> Taba | None:
+    """Resolve which taba is primary when multiple tabas apply to a plot.
+
+    Resolution rules (in priority order):
+    1. If a taba is already marked is_primary=True, use it
+    2. Later approval date overrides earlier
+    3. Parcel-specific (non-empty plot_id) overrides comprehensive plans
+
+    The winning taba is marked is_primary=True, others False.
+
+    Args:
+        tabas: List of Taba models.
+
+    Returns:
+        The primary Taba, or None if list is empty.
+    """
+    if not tabas:
+        return None
+
+    if len(tabas) == 1:
+        tabas[0].is_primary = True
+        return tabas[0]
+
+    # Check if one is already marked primary
+    marked = [t for t in tabas if t.is_primary]
+    if len(marked) == 1:
+        return marked[0]
+
+    # Sort by specificity (parcel-specific first), then by approval date (latest first)
+    def _sort_key(t: Taba) -> tuple[int, str]:
+        specificity = 0 if t.plot_id and t.plot_id.strip() else 1
+        date = t.approval_date or "0000-00-00"
+        return (specificity, date)
+
+    sorted_tabas = sorted(tabas, key=_sort_key, reverse=False)
+    # After sorting: specificity 0 (specific) comes before 1 (general) when reversed
+    # We want: specific first, then latest date
+    sorted_tabas = sorted(tabas, key=lambda t: (
+        0 if t.plot_id and t.plot_id.strip() else 1,  # specific first
+        t.approval_date or "0000-00-00",  # latest date first
+    ))
+    # Reverse so that (0, latest_date) comes first
+    sorted_tabas.sort(key=lambda t: (
+        0 if t.plot_id and t.plot_id.strip() else 1,
+        -(hash(t.approval_date or "0000-00-00")),  # not reliable for dates
+    ))
+
+    # Simple approach: parcel-specific + latest date wins
+    best = tabas[0]
+    for t in tabas[1:]:
+        t_specific = bool(t.plot_id and t.plot_id.strip())
+        best_specific = bool(best.plot_id and best.plot_id.strip())
+        t_date = t.approval_date or "0000-00-00"
+        best_date = best.approval_date or "0000-00-00"
+
+        if t_specific and not best_specific:
+            best = t
+        elif t_specific == best_specific and t_date > best_date:
+            best = t
+
+    # Mark primary
+    for t in tabas:
+        t.is_primary = (t is best)
+
+    return best

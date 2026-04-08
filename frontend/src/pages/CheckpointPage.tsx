@@ -132,14 +132,16 @@ export default function CheckpointPage() {
         </div>
 
         {/* Approve button */}
+        <div className="mt-7 max-sm:sticky max-sm:bottom-0 max-sm:bg-[rgba(255,253,248,0.95)] max-sm:backdrop-blur-sm max-sm:z-20 max-sm:pb-3 max-sm:pt-3 max-sm:-mx-5 max-sm:px-5 max-sm:border-t max-sm:border-[#D8D0C4]">
         <button
           type="button"
           onClick={handleConfirm}
           disabled={submitting}
-          className="mt-7 w-full md:w-auto px-8 py-3 text-[0.95rem] font-semibold rounded-[--radius-md] bg-success text-white hover:bg-success/90 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer"
+          className="w-full md:w-auto px-8 py-3 text-[0.95rem] font-semibold rounded-[--radius-md] bg-success text-white hover:bg-success/90 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer"
         >
           {submitting ? "מאשר..." : "אישור הסיווג והמשך"}
         </button>
+        </div>
       </div>
     </div>
     </div>

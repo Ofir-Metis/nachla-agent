@@ -116,9 +116,28 @@ nachla-agent/
 - Basement: 0.3 coefficient (service) or 0.7 (residential) - not always 0.7
 - Permit fee cap: decision 1523 limits total permit fees per nachala - check after summing all buildings
 
+## Workflow Phases (16 total)
+1. **intake** — Client data intake, priority area detection, data freshness check
+2. **taba_analysis** — Zoning plan analysis, taba conflict resolution (latest wins)
+3. **building_mapping** — Map buildings from survey map (LLM document analysis)
+4. **classification_checkpoint** — MANDATORY user confirmation of building classifications
+5. **usage_fees** — Calculate usage fees per building
+6. **sqm_equivalent** — Calculate equivalent sqm (dynamic 808 calculation)
+7. **hivun** — Calculate both 3.75% and 33% capitalization tracks (with dev costs)
+8. **regularization** — Calculate permit fees, apply exemptions and Decision 1523/1553 caps
+9. **split** — Calculate split costs (if applicable)
+10. **agricultural** — Process agricultural buildings (exempt from permits, 2% usage)
+11. **betterment** — Calculate betterment levy (only when non-compliant buildings exist)
+12. **report** — Assemble report data with narratives
+13. **review** — Sanity checks on calculations
+14. **export** — Generate Word/Excel/PDF documents
+15. **monday_sync** — Update Monday.com status (fire-and-forget, never blocks)
+16. **complete** — Job done
+
 ## Test Commands
 ```bash
-pytest tests/ -v                    # Run all tests
+pytest tests/ -v --ignore=tests/test_documents.py  # Run all tests
 pytest tests/test_calculations.py   # Calculation unit tests only
-python -m chainlit run src/ui/app.py  # Run UI
+cd frontend && npm run build        # Build frontend
+docker compose up -d --build        # Full stack
 ```

@@ -273,7 +273,8 @@ class TestDmeiHeter:
             shovi_per_sqm=7000,
         )
         assert "result" in result
-        assert "cap_value" in result["result"]
+        assert "effective_cap" in result["result"]
+        assert "cap_1523" in result["result"]
         assert "exceeds_cap" in result["result"]
 
 
@@ -962,3 +963,168 @@ class TestValidatorFixes:
         assert "warnings" in result
         assert len(result["warnings"]) > 0
         assert any("קו עימות" in w or "frontline" in w.lower() for w in result["warnings"])
+
+
+# ===================================================================
+# Basement Coefficient Tests (Sprint 3.8 — M7 audit)
+# ===================================================================
+
+class TestBasementCoefficients:
+    """Verify 0.3 (service) and 0.7 (residential) are correctly applied."""
+
+    def test_sqm_equivalent_basement_service_coeff(self):
+        """basement_service should use 0.3 coefficient in sqm equivalent."""
+        result = calculate_sqm_equivalent([{"type": "basement_service", "area_sqm": 100}])
+        assert "error" not in result
+        coeff = CONFIG["sqm_equivalent_coefficients"]["basement_service"]
+        assert coeff == 0.3
+        expected = 100 * coeff
+        assert result["result"] == pytest.approx(expected, rel=1e-6)
+
+    def test_sqm_equivalent_basement_residential_coeff(self):
+        """basement_residential should use 0.7 coefficient in sqm equivalent."""
+        result = calculate_sqm_equivalent([{"type": "basement_residential", "area_sqm": 100}])
+        assert "error" not in result
+        coeff = CONFIG["sqm_equivalent_coefficients"]["basement_residential"]
+        assert coeff == 0.7
+        expected = 100 * coeff
+        assert result["result"] == pytest.approx(expected, rel=1e-6)
+
+    def test_permit_fee_basement_service_coeff(self):
+        """basement_service should use 0.3 coefficient in permit fees."""
+        coeff = CONFIG["permit_fee_coefficients"]["basement_service"]
+        assert coeff == 0.3
+        result = calculate_dmei_heter(100, "basement_service", 7000)
+        assert "error" not in result
+        permit_rate = CONFIG["permit_fee_rate"]["value"]
+        vat_rate = CONFIG["vat_rate"]["value"]
+        expected = 100 * 0.3 * 7000 * permit_rate * (1 + vat_rate)
+        assert result["result"] == pytest.approx(expected, rel=1e-6)
+
+    def test_permit_fee_basement_residential_coeff(self):
+        """basement_residential should use 0.7 coefficient in permit fees."""
+        coeff = CONFIG["permit_fee_coefficients"]["basement_residential"]
+        assert coeff == 0.7
+        result = calculate_dmei_heter(100, "basement_residential", 7000)
+        assert "error" not in result
+        permit_rate = CONFIG["permit_fee_rate"]["value"]
+        vat_rate = CONFIG["vat_rate"]["value"]
+        expected = 100 * 0.7 * 7000 * permit_rate * (1 + vat_rate)
+        assert result["result"] == pytest.approx(expected, rel=1e-6)
+
+    def test_attic_usable_coeff(self):
+        """attic_usable (>1.80m) should use 1.0 coefficient."""
+        coeff = CONFIG["sqm_equivalent_coefficients"]["attic_usable"]
+        assert coeff == 1.0
+        result = calculate_sqm_equivalent([{"type": "attic_usable", "area_sqm": 50}])
+        assert result["result"] == pytest.approx(50.0, rel=1e-6)
+
+    def test_attic_unusable_coeff(self):
+        """attic_unusable (<=1.80m) should use 0.0 coefficient — no area counted."""
+        coeff = CONFIG["sqm_equivalent_coefficients"]["attic_unusable"]
+        assert coeff == 0.0
+        result = calculate_sqm_equivalent([{"type": "attic_unusable", "area_sqm": 50}])
+        assert result["result"] == pytest.approx(0.0, rel=1e-6)
+
+
+# ===================================================================
+# MAMAD Exemption Tests (Sprint 6.4)
+# ===================================================================
+
+class TestMamadExemption:
+    """Verify MAMAD per-house exemption in permit fees."""
+
+    def test_mamad_first_exempt(self):
+        """First MAMAD per house gets exemption up to 12 sqm."""
+        result = calculate_building_permit_fees(
+            building_areas=[
+                {"type": "main", "area_sqm": 200},
+                {"type": "mamad", "area_sqm": 12},
+            ],
+            shovi_per_sqm=7000,
+            building_order=3,  # 3rd house — no main exemption
+            is_agricultural=False,
+            is_pre_1965=False,
+        )
+        assert "error" not in result
+        # MAMAD should be in exemptions
+        assert any("ממ\"ד" in e for e in result["exemptions"])
+        # MAMAD component should be exempt (0 cost)
+        mamad_comp = next((c for c in result["components"] if c["type"] == "mamad"), None)
+        assert mamad_comp is not None
+        assert mamad_comp["cost"] == 0.0
+
+    def test_mamad_over_exemption_charged(self):
+        """MAMAD area above 12 sqm should be charged."""
+        result = calculate_building_permit_fees(
+            building_areas=[
+                {"type": "main", "area_sqm": 200},
+                {"type": "mamad", "area_sqm": 20},
+            ],
+            shovi_per_sqm=7000,
+            building_order=3,
+            is_agricultural=False,
+            is_pre_1965=False,
+        )
+        assert "error" not in result
+        mamad_comp = next((c for c in result["components"] if c["type"] == "mamad"), None)
+        assert mamad_comp is not None
+        # Chargeable = 20 - 12 = 8 sqm
+        assert mamad_comp["chargeable_sqm"] == pytest.approx(8.0, rel=1e-6)
+        assert mamad_comp["cost"] > 0
+
+
+# ===================================================================
+# Golden Rate Validation (Sprint 6.4)
+# ===================================================================
+
+class TestGoldenRateValidation:
+    """Cross-validate rates_config.json values against expected ranges."""
+
+    def test_vat_rate_current(self):
+        """VAT rate should be 18% (post-2025)."""
+        assert CONFIG["vat_rate"]["value"] == 0.18
+
+    def test_permit_fee_rate(self):
+        """Permit fee rate should be 91% per decision 1523."""
+        assert CONFIG["permit_fee_rate"]["value"] == 0.91
+
+    def test_hivun_375_rate(self):
+        """3.75% capitalization rate."""
+        assert CONFIG["hivun_375_rate"]["value"] == 0.0375
+
+    def test_hivun_33_rate(self):
+        """33% purchase rate."""
+        assert CONFIG["hivun_33_rate"]["value"] == 0.33
+
+    def test_usage_fee_rates(self):
+        """Usage fee rates: 5% residential, 3% priority, 2% agricultural."""
+        assert CONFIG["usage_fee_residential"]["value"] == 0.05
+        assert CONFIG["usage_fee_priority"]["value"] == 0.03
+        assert CONFIG["usage_fee_agricultural"]["value"] == 0.02
+
+    def test_house_exemption(self):
+        """House exemption should be 160 sqm."""
+        assert CONFIG["house_exemption_sqm"]["value"] == 160
+
+    def test_mamad_exemption(self):
+        """MAMAD exemption should be 12 sqm."""
+        assert CONFIG["mamad_exemption_sqm"]["value"] == 12
+
+    def test_betterment_levy_rate(self):
+        """Betterment levy rate should be 50%."""
+        assert CONFIG["betterment_levy_rate"]["value"] == 0.50
+
+    def test_decision_1553_caps(self):
+        """Decision 1553 priority area caps."""
+        caps = CONFIG["decision_1553_caps"]
+        assert caps["priority_cap_per_unit"] == 450000
+        assert caps["priority_cap_two_units"] == 900000
+
+    def test_priority_area_a_discount(self):
+        """Priority area A permit discount should be 51%."""
+        assert CONFIG["priority_area_discounts"]["A"]["permit"] == 0.51
+
+    def test_priority_area_b_discount(self):
+        """Priority area B permit discount should be 25%."""
+        assert CONFIG["priority_area_discounts"]["B"]["permit"] == 0.25
