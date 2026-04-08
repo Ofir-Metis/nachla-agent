@@ -27,6 +27,7 @@ from agent.system_prompt import build_system_prompt
 from agent.workflow import WorkflowPhase, WorkflowState, run_sanity_checks
 from config.settings import AppSettings, get_settings
 from models.building import Building, BuildingStatus, BuildingType
+from tools.exceptions import CalculationInputError
 from models.nachla import ClientGoal, Nachla, PriorityArea
 from models.report import ReportData
 from models.taba import Taba, resolve_primary_taba
@@ -882,6 +883,9 @@ class NachlaAgent:
                 results["building_fees"][building.id] = fee_result
                 results[f"building_{building.id}_usage_fees"] = fee_result.get("total_fees", 0)
                 results["total"] += fee_result.get("total_fees", 0)
+            except CalculationInputError as exc:
+                logger.warning("Usage fee input error for building %d: %s (not retrying)", building.id, exc)
+                results["building_fees"][building.id] = {"error": str(exc), "input_error": True}
             except Exception as exc:
                 logger.error("Usage fee calc failed for building %d: %s", building.id, exc)
                 results["building_fees"][building.id] = {"error": str(exc)}
@@ -1024,6 +1028,9 @@ class NachlaAgent:
                 fees = fee_result.get("total_permit_fees", 0)
                 results["permit_fees"][f"building_{building.id}_permit_fees"] = fees
                 results["total_permit_fees"] += fees
+            except CalculationInputError as exc:
+                logger.warning("Permit fee input error for building %d: %s (not retrying)", building.id, exc)
+                results["building_results"][building.id] = {"error": str(exc), "input_error": True}
             except Exception as exc:
                 logger.error("Permit fee calc failed for building %d: %s", building.id, exc)
                 results["building_results"][building.id] = {"error": str(exc)}
@@ -1120,6 +1127,9 @@ class NachlaAgent:
                     },
                 )
                 results[f"building_{building.id}"] = result
+            except CalculationInputError as exc:
+                logger.warning("Betterment input error for building %d: %s (not retrying)", building.id, exc)
+                results[f"building_{building.id}"] = {"error": str(exc), "input_error": True}
             except Exception as exc:
                 logger.error("Betterment calc failed for building %d: %s", building.id, exc)
                 results[f"building_{building.id}"] = {"error": str(exc)}

@@ -2,7 +2,7 @@ import type { IntakeData, JobStatusResponse, JobCreateResponse, Building, CostSu
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
-class ApiError extends Error {
+export class ApiError extends Error {
   status: number;
   constructor(message: string, status: number) {
     super(message);

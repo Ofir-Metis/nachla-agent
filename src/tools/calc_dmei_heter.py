@@ -7,6 +7,8 @@ Every function returns an audit dict with: result, formula, rates_used, inputs.
 import json
 from pathlib import Path
 
+from tools.exceptions import CalculationInputError
+
 
 def _load_config() -> dict:
     config_path = Path(__file__).parent.parent / "config" / "rates_config.json"
@@ -43,22 +45,15 @@ def calculate_dmei_heter(
     valid_types = [k for k in coefficients if k not in ("effective_date", "expiry_date", "note")]
 
     if area_type not in valid_types:
-        return {
-            "error": f"סוג שטח לא חוקי: {area_type}. סוגים תקינים: {valid_types}",
-            "inputs": {"area_sqm": area_sqm, "area_type": area_type},
-        }
+        raise CalculationInputError(
+            f"סוג שטח לא חוקי: {area_type}. סוגים תקינים: {valid_types}"
+        )
 
     if area_sqm < 0:
-        return {
-            "error": "שטח לא יכול להיות שלילי",
-            "inputs": {"area_sqm": area_sqm, "area_type": area_type},
-        }
+        raise CalculationInputError("שטח לא יכול להיות שלילי")
 
     if shovi_per_sqm <= 0:
-        return {
-            "error": "שווי למ\"ר חייב להיות חיובי",
-            "inputs": {"shovi_per_sqm": shovi_per_sqm},
-        }
+        raise CalculationInputError("שווי למ\"ר חייב להיות חיובי")
 
     coefficient = float(coefficients[area_type])
     permit_rate = float(config["permit_fee_rate"]["value"])

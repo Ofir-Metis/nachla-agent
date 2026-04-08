@@ -261,9 +261,10 @@ class TestDmeiHeter:
         assert result["result"] == 0.0
 
     def test_dmei_heter_invalid_type(self):
-        """Invalid area type returns error."""
-        result = calculate_dmei_heter(100, "invalid_type", 7000)
-        assert "error" in result
+        """Invalid area type raises CalculationInputError."""
+        from tools.exceptions import CalculationInputError
+        with pytest.raises(CalculationInputError):
+            calculate_dmei_heter(100, "invalid_type", 7000)
 
     def test_permit_fee_cap_basic(self):
         """Cap check returns correct structure."""
@@ -1025,6 +1026,24 @@ class TestBasementCoefficients:
         coeff = CONFIG["sqm_equivalent_coefficients"]["attic_unusable"]
         assert coeff == 0.0
         result = calculate_sqm_equivalent([{"type": "attic_unusable", "area_sqm": 50}])
+        assert result["result"] == pytest.approx(0.0, rel=1e-6)
+
+    def test_pergola_opaque_permit_fee(self):
+        """Opaque pergola (>40% roofing) should be charged permit fees at 1.0 coefficient."""
+        coeff = CONFIG["permit_fee_coefficients"]["pergola_opaque"]
+        assert coeff == 1.0
+        result = calculate_dmei_heter(30, "pergola_opaque", 7000)
+        assert "error" not in result
+        permit_rate = CONFIG["permit_fee_rate"]["value"]
+        vat_rate = CONFIG["vat_rate"]["value"]
+        expected = 30 * 1.0 * 7000 * permit_rate * (1 + vat_rate)
+        assert result["result"] == pytest.approx(expected, rel=1e-6)
+
+    def test_pergola_transparent_no_permit_fee(self):
+        """Transparent pergola should have 0.0 coefficient — no permit fees."""
+        coeff = CONFIG["permit_fee_coefficients"]["pergola_transparent"]
+        assert coeff == 0.0
+        result = calculate_dmei_heter(30, "pergola_transparent", 7000)
         assert result["result"] == pytest.approx(0.0, rel=1e-6)
 
 

@@ -10,6 +10,8 @@ Every function returns an audit dict with: result, formula, rates_used, inputs.
 import json
 from pathlib import Path
 
+from tools.exceptions import CalculationInputError
+
 
 def _load_config() -> dict:
     config_path = Path(__file__).parent.parent / "config" / "rates_config.json"

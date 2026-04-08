@@ -178,9 +178,11 @@
     "mamad": 0.9,
     "attic_usable": 1.0,
     "attic_unusable": 0.0,
+    "pergola_opaque": 1.0,
+    "pergola_transparent": 0.0,
     "effective_date": "2020-01-01",
     "expiry_date": null,
-    "note": "Coefficients for permit fee calculation. Attic: usable (>1.80m) = 1.0, unusable (<=1.80m) = 0.0"
+    "note": "Coefficients for permit fee calculation. Pergola: opaque (>40% roofing) counts as built area = 1.0, transparent = 0.0"
   },
   "usage_fee_coefficients": {
     "main": 1.0,

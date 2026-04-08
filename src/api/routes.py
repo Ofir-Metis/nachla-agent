@@ -106,6 +106,31 @@ class BuildingsResponse(BaseModel):
     count: int
 
 
+class CloudExportFile(BaseModel):
+    """A single file exported to cloud storage."""
+
+    service: str
+    file: str
+    link: str
+
+
+class CloudExportError(BaseModel):
+    """An error during cloud export."""
+
+    service: str
+    error: str
+
+
+class CloudExportResponse(BaseModel):
+    """Response from cloud export operation."""
+
+    status: str
+    message: str
+    target: str
+    files: list[CloudExportFile] = Field(default_factory=list)
+    errors: list[CloudExportError] = Field(default_factory=list)
+
+
 class ResultsResponse(BaseModel):
     """Response containing cost summary for the results page."""
 
@@ -554,7 +579,7 @@ async def download_report(job_id: str, file_type: str, request: Request) -> File
 
 
 @router.post("/jobs/{job_id}/cloud-export/{target}")
-async def cloud_export(job_id: str, target: str, request: Request) -> dict:
+async def cloud_export(job_id: str, target: str, request: Request) -> CloudExportResponse:
     """Export completed job reports to cloud storage.
 
     Args:
@@ -617,10 +642,17 @@ async def cloud_export(job_id: str, target: str, request: Request) -> dict:
                         results["files"].append({"service": "onedrive", "file": key, "link": link})
 
         except Exception as exc:
-            results.setdefault("errors", []).append({"service": t, "error": str(exc)})
+            logger.error("Cloud export %s failed: %s", t, exc)
+            results.setdefault("errors", []).append({
+                "service": t,
+                "error": "שגיאה בהעלאה לשירות הענן. אנא נסו שנית.",
+            })
 
-    return {
-        "status": "ok" if not results.get("errors") else "partial",
-        "message": "הקבצים הועלו בהצלחה" if not results.get("errors") else "חלק מהקבצים לא הועלו",
-        **results,
-    }
+    has_errors = bool(results.get("errors"))
+    return CloudExportResponse(
+        status="partial" if has_errors else "ok",
+        message="חלק מהקבצים לא הועלו" if has_errors else "הקבצים הועלו בהצלחה",
+        target=target,
+        files=results.get("files", []),
+        errors=results.get("errors", []),
+    )

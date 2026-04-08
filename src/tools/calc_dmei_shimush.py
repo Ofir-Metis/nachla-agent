@@ -7,6 +7,8 @@ Every function returns an audit dict with: result, formula, rates_used, inputs.
 import json
 from pathlib import Path
 
+from tools.exceptions import CalculationInputError
+
 
 def _load_config() -> dict:
     config_path = Path(__file__).parent.parent / "config" / "rates_config.json"
@@ -59,23 +61,21 @@ def calculate_dmei_shimush(
     valid_types = [k for k in eco_coefficients if k not in ("effective_date", "expiry_date", "note")]
 
     if area_type not in valid_types:
-        return {
-            "error": f"סוג שטח לא חוקי: {area_type}. סוגים תקינים: {valid_types}",
-            "inputs": inputs,
-        }
+        raise CalculationInputError(
+            f"סוג שטח לא חוקי: {area_type}. סוגים תקינים: {valid_types}"
+        )
 
     if area_sqm < 0:
-        return {"error": "שטח לא יכול להיות שלילי", "inputs": inputs}
+        raise CalculationInputError("שטח לא יכול להיות שלילי")
 
     if shovi_per_sqm <= 0:
-        return {"error": "שווי למ\"ר חייב להיות חיובי", "inputs": inputs}
+        raise CalculationInputError("שווי למ\"ר חייב להיות חיובי")
 
     valid_usage = ("residential", "agricultural", "plach")
     if usage_type not in valid_usage:
-        return {
-            "error": f"סוג שימוש לא חוקי: {usage_type}. סוגים תקינים: {list(valid_usage)}",
-            "inputs": inputs,
-        }
+        raise CalculationInputError(
+            f"סוג שימוש לא חוקי: {usage_type}. סוגים תקינים: {list(valid_usage)}"
+        )
 
     # --- Exemption checks ---
     exemptions: list[str] = []
