@@ -537,7 +537,7 @@ async def download_report(job_id: str, file_type: str, request: Request) -> File
 
     # Verify path is within the output directory to prevent path traversal
     output_root = _Path(os.getenv("OUTPUT_DIRECTORY", "output")).resolve()
-    if not str(resolved).startswith(str(output_root)):
+    if not resolved.is_relative_to(output_root):
         raise HTTPException(
             status_code=403,
             detail="גישה לקובץ נדחתה — הנתיב מחוץ לתיקיית הפלט.",

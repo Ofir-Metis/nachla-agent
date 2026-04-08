@@ -111,26 +111,7 @@ def resolve_primary_taba(tabas: list[Taba]) -> Taba | None:
     if len(marked) == 1:
         return marked[0]
 
-    # Sort by specificity (parcel-specific first), then by approval date (latest first)
-    def _sort_key(t: Taba) -> tuple[int, str]:
-        specificity = 0 if t.plot_id and t.plot_id.strip() else 1
-        date = t.approval_date or "0000-00-00"
-        return (specificity, date)
-
-    sorted_tabas = sorted(tabas, key=_sort_key, reverse=False)
-    # After sorting: specificity 0 (specific) comes before 1 (general) when reversed
-    # We want: specific first, then latest date
-    sorted_tabas = sorted(tabas, key=lambda t: (
-        0 if t.plot_id and t.plot_id.strip() else 1,  # specific first
-        t.approval_date or "0000-00-00",  # latest date first
-    ))
-    # Reverse so that (0, latest_date) comes first
-    sorted_tabas.sort(key=lambda t: (
-        0 if t.plot_id and t.plot_id.strip() else 1,
-        -(hash(t.approval_date or "0000-00-00")),  # not reliable for dates
-    ))
-
-    # Simple approach: parcel-specific + latest date wins
+    # Resolve: parcel-specific overrides comprehensive, latest date wins within same tier
     best = tabas[0]
     for t in tabas[1:]:
         t_specific = bool(t.plot_id and t.plot_id.strip())

@@ -98,7 +98,7 @@ export default function CheckpointPage() {
         </p>
 
         {error && (
-          <div className="mb-5 p-3 bg-error/10 border border-error/30 rounded-[--radius-sm] text-error text-[0.85rem] animate-[alertIn_0.3s_ease-out]">
+          <div role="alert" className="mb-5 p-3 bg-error/10 border border-error/30 rounded-[--radius-sm] text-error text-[0.85rem] animate-[alertIn_0.3s_ease-out]">
             {error}
           </div>
         )}

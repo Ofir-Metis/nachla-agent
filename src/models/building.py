@@ -148,7 +148,7 @@ class Building(BaseModel):
     def validate_pre_1965_consistency(self) -> Building:
         """Ensure pre-1965 flag is consistent with construction year."""
         if self.construction_year is not None and self.construction_year < 1965:
-            object.__setattr__(self, "is_pre_1965", True)
+            self.is_pre_1965 = True
         return self
 
     @model_validator(mode="after")

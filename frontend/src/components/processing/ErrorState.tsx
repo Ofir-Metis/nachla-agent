@@ -34,7 +34,7 @@ export default function ErrorState({ message, detail, onRetry }: ErrorStateProps
           onClick={onRetry}
           className="px-6 py-2.5 rounded-[--radius-md] font-semibold text-[0.9rem] bg-olive-700 text-white hover:bg-olive-600 active:scale-[0.98] transition-all cursor-pointer"
         >
-          נסה שוב
+          נסו שוב
         </button>
         <a
           href="tel:*9696"

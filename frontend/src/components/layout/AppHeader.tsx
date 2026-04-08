@@ -8,7 +8,7 @@ export default function AppHeader() {
   return (
     <>
     {!isOnline && (
-      <div className="bg-wheat-600 text-white text-center text-[0.85rem] font-medium py-2 px-4 -mx-4 sm:-mx-6" dir="rtl">
+      <div role="alert" className="bg-warning text-white text-center text-[0.85rem] font-medium py-2 px-4 -mx-4 sm:-mx-6" dir="rtl">
         אין חיבור לאינטרנט — חלק מהפעולות לא יהיו זמינות
       </div>
     )}
