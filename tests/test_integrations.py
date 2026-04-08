@@ -5,6 +5,7 @@ Tests verify:
 - OneDrive: folder creation, file upload, share links
 - Google Drive: folder creation, file upload, share links
 - Govmap: returns None in Phase 3 (manual mode)
+- API routes: buildings, results, labels, classification confirm
 
 All tests use mock_mode=True -- NO real API calls.
 """
@@ -15,6 +16,8 @@ import asyncio
 import os
 import tempfile
 from pathlib import Path
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -406,3 +409,229 @@ class TestGovmapClient:
         assert taba_dict["split_min_plot_sqm"] == 350
         assert taba_dict["pool_allowed"] is False
         assert taba_dict["attached_unit_allowed"] is True
+
+
+# ---------------------------------------------------------------------------
+# API Route Tests
+# ---------------------------------------------------------------------------
+
+
+class TestAPIRoutes:
+    """Tests for new API endpoints added in Phase 5."""
+
+    @pytest.fixture()
+    def app(self) -> Any:
+        """Create a FastAPI app with the router and a mock job queue."""
+        from fastapi import FastAPI
+
+        from api.routes import router
+
+        app = FastAPI()
+        app.include_router(router)
+        return app
+
+    @pytest.fixture()
+    def mock_job_queue(self) -> MagicMock:
+        """Create a mock job queue."""
+        return MagicMock()
+
+    @pytest.fixture()
+    def client(self, app: Any, mock_job_queue: MagicMock) -> Any:
+        """Create a test client with a mock job queue attached."""
+        from fastapi.testclient import TestClient
+
+        app.state.job_queue = mock_job_queue
+        return TestClient(app)
+
+    def _make_job(
+        self,
+        *,
+        state: str = "complete",
+        phase: str = "complete",
+        buildings: list[dict[str, Any]] | None = None,
+        result: dict[str, Any] | None = None,
+    ) -> MagicMock:
+        """Create a mock Job object."""
+        job = MagicMock()
+        job.id = "test-job-123"
+        job.state = state
+        job.phase = phase
+        job.progress = 100 if state == "complete" else 50
+        job.message = "הושלם"
+        job.buildings = buildings or []
+        job.result = result
+        return job
+
+    # --- GET /api/v1/jobs/{job_id}/buildings ---
+
+    def test_get_buildings_success(self, client: Any, mock_job_queue: MagicMock) -> None:
+        """Buildings endpoint returns building list when available."""
+        buildings = [
+            {"id": 1, "name": "בית ראשון", "building_type": "residential", "status": "compliant", "main_area_sqm": 120},
+            {"id": 2, "name": "מחסן", "building_type": "service", "status": "no_permit", "main_area_sqm": 40},
+        ]
+        job = self._make_job(state="checkpoint", buildings=buildings)
+        mock_job_queue.get_status = AsyncMock(return_value=job)
+
+        resp = client.get("/api/v1/jobs/test-job-123/buildings")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["job_id"] == "test-job-123"
+        assert data["count"] == 2
+        assert len(data["buildings"]) == 2
+        assert data["buildings"][0]["name"] == "בית ראשון"
+
+    def test_get_buildings_not_found(self, client: Any, mock_job_queue: MagicMock) -> None:
+        """Buildings endpoint returns 404 for unknown job."""
+        mock_job_queue.get_status = AsyncMock(return_value=None)
+
+        resp = client.get("/api/v1/jobs/nonexistent/buildings")
+        assert resp.status_code == 404
+        assert "לא נמצאה" in resp.json()["detail"]
+
+    def test_get_buildings_not_mapped(self, client: Any, mock_job_queue: MagicMock) -> None:
+        """Buildings endpoint returns 400 when buildings not yet mapped."""
+        job = self._make_job(state="running", buildings=[])
+        mock_job_queue.get_status = AsyncMock(return_value=job)
+
+        resp = client.get("/api/v1/jobs/test-job-123/buildings")
+        assert resp.status_code == 400
+        assert "טרם מופו" in resp.json()["detail"]
+
+    # --- GET /api/v1/jobs/{job_id}/results ---
+
+    def test_get_results_success(self, client: Any, mock_job_queue: MagicMock) -> None:
+        """Results endpoint returns cost summary for completed job."""
+        result = {
+            "total_regularization_cost": 150000,
+            "total_usage_fees": 30000,
+            "total_permit_fees": 120000,
+            "betterment_levy": 5000,
+            "hivun_375_result": {"total_cost": 80000},
+            "hivun_33_result": {"total_cost": 200000},
+            "building_cards": [{"building_name": "test", "total_cost": 150000}],
+            "word_path": "/output/report.docx",
+            "pdf_path": "/output/report.pdf",
+        }
+        job = self._make_job(state="complete", result=result)
+        mock_job_queue.get_status = AsyncMock(return_value=job)
+
+        resp = client.get("/api/v1/jobs/test-job-123/results")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["job_id"] == "test-job-123"
+        assert data["total_regularization_cost"] == 150000
+        assert data["total_usage_fees"] == 30000
+        assert data["total_permit_fees"] == 120000
+        assert data["betterment_levy"] == 5000
+        assert data["hivun_375_total"] == 80000
+        assert data["hivun_33_total"] == 200000
+        assert len(data["building_cards"]) == 1
+        assert "word" in data["download_types"]
+        assert "pdf" in data["download_types"]
+        assert "excel" not in data["download_types"]
+
+    def test_get_results_not_found(self, client: Any, mock_job_queue: MagicMock) -> None:
+        """Results endpoint returns 404 for unknown job."""
+        mock_job_queue.get_status = AsyncMock(return_value=None)
+
+        resp = client.get("/api/v1/jobs/nonexistent/results")
+        assert resp.status_code == 404
+
+    def test_get_results_not_complete(self, client: Any, mock_job_queue: MagicMock) -> None:
+        """Results endpoint returns 400 when job not complete."""
+        job = self._make_job(state="running")
+        mock_job_queue.get_status = AsyncMock(return_value=job)
+
+        resp = client.get("/api/v1/jobs/test-job-123/results")
+        assert resp.status_code == 400
+        assert "טרם הושלמה" in resp.json()["detail"]
+
+    # --- GET /api/v1/labels ---
+
+    def test_get_labels(self, client: Any) -> None:
+        """Labels endpoint returns all label dictionaries."""
+        resp = client.get("/api/v1/labels")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "building_types" in data
+        assert "building_statuses" in data
+        assert "auth_types" in data
+        assert "client_goals" in data
+        assert "ownership_types" in data
+        # Verify Hebrew content
+        assert data["building_types"]["residential"] == "בית מגורים"
+        assert data["building_statuses"]["compliant"] == "תקין - תואם היתר"
+
+    # --- POST /api/v1/jobs/{job_id}/classify/confirm (type-tightened) ---
+
+    def test_confirm_classification_typed(self, client: Any, mock_job_queue: MagicMock) -> None:
+        """Classification confirm uses BuildingConfirmItem typed models."""
+        job = self._make_job(state="checkpoint")
+        mock_job_queue.get_status = AsyncMock(return_value=job)
+        mock_job_queue.resume_after_checkpoint = AsyncMock()
+
+        body = {
+            "buildings": [
+                {
+                    "id": 1,
+                    "building_type": "residential",
+                    "status": "compliant",
+                    "main_area_sqm": 120,
+                    "name": "בית ראשון",
+                },
+                {
+                    "id": 2,
+                    "building_type": "service",
+                    "status": "no_permit",
+                    "main_area_sqm": 40,
+                },
+            ]
+        }
+        resp = client.post("/api/v1/jobs/test-job-123/classify/confirm", json=body)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["buildings_confirmed"] == 2
+
+    def test_confirm_classification_rejects_invalid(self, client: Any, mock_job_queue: MagicMock) -> None:
+        """Classification confirm rejects missing required fields."""
+        job = self._make_job(state="checkpoint")
+        mock_job_queue.get_status = AsyncMock(return_value=job)
+
+        # Missing building_type and status
+        body = {"buildings": [{"id": 1, "main_area_sqm": 120}]}
+        resp = client.post("/api/v1/jobs/test-job-123/classify/confirm", json=body)
+        assert resp.status_code == 422  # Pydantic validation error
+
+    def test_confirm_classification_rejects_negative_area(self, client: Any, mock_job_queue: MagicMock) -> None:
+        """Classification confirm rejects negative area values."""
+        job = self._make_job(state="checkpoint")
+        mock_job_queue.get_status = AsyncMock(return_value=job)
+
+        body = {
+            "buildings": [
+                {
+                    "id": 1,
+                    "building_type": "residential",
+                    "status": "compliant",
+                    "main_area_sqm": -50,
+                }
+            ]
+        }
+        resp = client.post("/api/v1/jobs/test-job-123/classify/confirm", json=body)
+        assert resp.status_code == 422
+
+    # --- GET /api/v1/jobs/{job_id}/status (expanded with sub_steps) ---
+
+    def test_status_includes_sub_steps(self, client: Any, mock_job_queue: MagicMock) -> None:
+        """Status response includes sub_steps field."""
+        job = self._make_job(state="running", phase="taba_analysis")
+        job.progress = 15
+        job.message = 'ניתוח תב"עות חלות'
+        mock_job_queue.get_status = AsyncMock(return_value=job)
+
+        resp = client.get("/api/v1/jobs/test-job-123/status")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "sub_steps" in data
+        assert isinstance(data["sub_steps"], list)

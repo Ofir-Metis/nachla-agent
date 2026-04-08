@@ -190,91 +190,164 @@ class JobQueue:
         logger.info("Job %s checkpoint confirmed with %d buildings", job_id, len(confirmed_buildings))
 
     async def _run_job(self, job_id: str) -> None:
-        """Execute the job in background.
+        """Execute the job in background using the real NachlaAgent.
 
-        This is the main job runner that orchestrates the workflow phases.
-        In production, this will invoke the agent SDK. For the prototype,
-        it simulates phase progression.
+        Orchestrates the full workflow: document analysis, building mapping,
+        classification checkpoint, calculations, report generation, and output.
 
         Args:
             job_id: Job identifier.
         """
+        from agent.main_agent import NachlaAgent
+        from agent.system_prompt import build_system_prompt
+        from config.settings import get_settings
+        from models.building import Building
+        from models.nachla import Nachla
+
         job = self._jobs.get(job_id)
         if not job:
             return
 
         try:
             job.state = JobState.RUNNING
+            settings = get_settings()
 
-            # Phase 1: Intake validation
+            # --- Create agent ---
+            agent = NachlaAgent(settings)
+
+            # Attach LLM client if API key is configured
+            llm_client = None
+            if settings.anthropic_api_key:
+                from agent.llm_client import LLMClient
+                llm_client = LLMClient(settings, audit_logger=agent.audit_logger)
+                agent.attach_llm(llm_client)
+                logger.info("Job %s: LLM client attached", job_id)
+            else:
+                logger.warning("Job %s: No ANTHROPIC_API_KEY, running without AI", job_id)
+
+            # --- Build Nachla model from intake data ---
+            nachla = Nachla(**job.intake_data)
+
+            # Build system prompt
+            priority = nachla.priority_area.value if nachla.priority_area else None
+            agent.system_prompt = build_system_prompt(priority_area=priority)
+
+            # Build uploaded file paths dict
+            uploaded_files: dict[str, str] = {}
+            for fpath in job.uploaded_files:
+                if "survey" in fpath.lower() or "מדידה" in fpath:
+                    uploaded_files["survey_map"] = fpath
+                elif "permit" in fpath.lower() or "היתר" in fpath:
+                    uploaded_files["building_permits"] = fpath
+                else:
+                    uploaded_files[fpath] = fpath
+
+            # --- Phase 1: Intake ---
             job.phase = "intake"
             job.progress = 5
-            logger.info("Job %s: intake phase", job_id)
+            await agent._run_intake(nachla)
 
-            # Phase 2: Taba analysis
+            # --- Phase 2: Taba analysis ---
             job.phase = "taba_analysis"
             job.progress = 15
-            logger.info("Job %s: taba analysis phase", job_id)
+            tabas = await agent._run_taba_analysis(nachla)
 
-            # Phase 3: Building mapping
+            # --- Phase 3: Building mapping (uses LLM for document analysis) ---
             job.phase = "building_mapping"
             job.progress = 30
-            logger.info("Job %s: building mapping phase", job_id)
+            buildings = await agent._run_building_mapping(nachla, uploaded_files)
 
-            # Phase 3.4: Classification checkpoint
-            # In production, the agent populates buildings from document analysis.
-            # The checkpoint pauses here until user confirms.
-            if job.buildings:
-                confirmed = await self.pause_for_checkpoint(job_id, job.buildings)
-                job.buildings = confirmed
+            # --- Phase 3.4: Classification checkpoint ---
+            if buildings:
+                job.buildings = [b.model_dump() for b in buildings]
+                confirmed_dicts = await self.pause_for_checkpoint(job_id, job.buildings)
+                buildings = []
+                for bd in confirmed_dicts:
+                    try:
+                        buildings.append(Building(**bd))
+                    except Exception as exc:
+                        logger.warning("Failed to parse confirmed building: %s", exc)
+                agent.workflow.confirm_classifications()
+            else:
+                # No buildings found — skip checkpoint, proceed with empty list
+                agent.workflow.classifications_confirmed = True
+                logger.warning("Job %s: No buildings found, skipping checkpoint", job_id)
 
-            # Phase 4: Usage fees calculation
-            job.phase = "usage_fees"
-            job.progress = 45
-            logger.info("Job %s: usage fees phase", job_id)
+            # --- Phases 4-11: Calculations ---
+            job.phase = "calculations"
+            job.progress = 50
+            calc_results = await agent._run_calculations(nachla, buildings, tabas)
 
-            # Phase 5: Permit fees calculation
-            job.phase = "permit_fees"
-            job.progress = 55
-            logger.info("Job %s: permit fees phase", job_id)
-
-            # Phase 6: Capitalization calculation
-            job.phase = "capitalization"
-            job.progress = 65
-            logger.info("Job %s: capitalization phase", job_id)
-
-            # Phase 9: Split calculation (if applicable)
-            goals = job.intake_data.get("client_goals", [])
-            if "split" in goals or "all" in goals:
-                job.phase = "split"
-                job.progress = 75
-                logger.info("Job %s: split phase", job_id)
-
-            # Phase 12: Report assembly
-            job.phase = "report_assembly"
-            job.progress = 85
+            # --- Phase 12: Report assembly + narratives ---
+            job.phase = "report"
+            job.progress = 80
             job.state = JobState.GENERATING
-            logger.info("Job %s: report assembly phase", job_id)
+            report_data = await agent._build_report_data(nachla, buildings, tabas, calc_results)
 
-            # Phase 13: Review
+            # --- Phase 13: Review (sanity checks) ---
             job.phase = "review"
             job.progress = 90
-            logger.info("Job %s: review phase", job_id)
+            await agent._run_review(report_data)
 
-            # Phase 14: Output
+            # --- Phase 14: Output (generate documents) ---
             job.phase = "output"
             job.progress = 95
-            logger.info("Job %s: output phase", job_id)
 
-            # Complete
+            output_dir = settings.output_directory
+            word_path = None
+            audit_path = None
+
+            try:
+                from documents.word_generator import WordGenerator
+                from pathlib import Path
+
+                Path(output_dir).mkdir(parents=True, exist_ok=True)
+                gen = WordGenerator()
+                template_path = "data/templates/סיכום בדיקת התכנות טמפלט.docx"
+
+                if Path(template_path).exists():
+                    word_path = gen.generate_report(
+                        report_data, template_path, f"{output_dir}/{job_id}.docx",
+                    )
+                    logger.info("Job %s: Word report generated at %s", job_id, word_path)
+            except Exception as exc:
+                logger.error("Job %s: Word generation failed: %s", job_id, exc)
+
+            # Save audit log
+            try:
+                from pathlib import Path as P
+                P(output_dir).mkdir(parents=True, exist_ok=True)
+                audit_path = f"{output_dir}/{job_id}_audit.json"
+                agent.save_audit_log(audit_path)
+                logger.info("Job %s: Audit log saved at %s", job_id, audit_path)
+            except Exception as exc:
+                logger.error("Job %s: Audit log save failed: %s", job_id, exc)
+
+            # --- Complete ---
             job.phase = "complete"
             job.progress = 100
             job.state = JobState.COMPLETE
             job.result = {
-                "word_path": None,  # Populated by document generator
+                "word_path": word_path,
                 "excel_path": None,
-                "audit_path": None,
+                "audit_path": audit_path,
                 "pdf_path": None,
+                "total_regularization_cost": report_data.total_regularization_cost,
+                "total_usage_fees": report_data.total_usage_fees,
+                "total_permit_fees": report_data.total_permit_fees,
+                "betterment_levy": report_data.betterment_levy if hasattr(report_data, "betterment_levy") else 0,
+                "hivun_375_total": (
+                    report_data.hivun_375_result.get("total_cost", 0)
+                    if isinstance(report_data.hivun_375_result, dict)
+                    else 0
+                ),
+                "hivun_33_total": (
+                    report_data.hivun_33_result.get("total_cost", 0)
+                    if isinstance(report_data.hivun_33_result, dict)
+                    else 0
+                ),
+                "token_usage": llm_client.token_usage if llm_client else {},
+                "cost_estimate": llm_client.estimate_cost() if llm_client else {},
             }
             logger.info("Job %s: complete", job_id)
 

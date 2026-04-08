@@ -1,0 +1,134 @@
+@import "tailwindcss";
+
+/* ═══════════════════════════════════════════════════
+   Nachla Agent — Agricultural Professional Theme
+   ═══════════════════════════════════════════════════ */
+
+@theme {
+  --color-olive-900: #1B2E1B;
+  --color-olive-800: #2A4229;
+  --color-olive-700: #3D5A3E;
+  --color-olive-600: #4E7250;
+  --color-olive-500: #5F8A62;
+  --color-olive-400: #7BA67E;
+  --color-olive-300: #A3C4A5;
+  --color-olive-200: #C8DEC9;
+  --color-olive-100: #E8F0E8;
+  --color-olive-50: #F4F8F4;
+
+  --color-wheat-700: #8B6914;
+  --color-wheat-600: #A67D1A;
+  --color-wheat-500: #C4956A;
+  --color-wheat-400: #D4AD7B;
+  --color-wheat-300: #E3C49D;
+  --color-wheat-200: #EDD8BC;
+  --color-wheat-100: #F5EBD9;
+  --color-wheat-50: #FBF6EF;
+
+  --color-terra-700: #8B3A1F;
+  --color-terra-600: #A8482A;
+  --color-terra-500: #B85C3C;
+  --color-terra-400: #CC7A5C;
+
+  --color-soil-900: #1A1209;
+  --color-soil-800: #2C2419;
+  --color-soil-700: #3E3628;
+  --color-soil-600: #574D3D;
+  --color-soil-500: #706454;
+
+  --color-parchment: #FAF7F2;
+  --color-parchment-warm: #F5EFE5;
+  --color-cream: #FFFDF8;
+
+  --color-success: #3D7A40;
+  --color-warning: #B8860B;
+  --color-error: #A63D2F;
+  --color-info: #2E6B8A;
+
+  --font-body: "Heebo", "Noto Sans Hebrew", "Segoe UI", sans-serif;
+  --font-heading: "Rubik", "Heebo", sans-serif;
+
+  --shadow-sm: 0 1px 3px rgba(26, 18, 9, 0.06);
+  --shadow-md: 0 4px 12px rgba(26, 18, 9, 0.08);
+  --shadow-lg: 0 8px 30px rgba(26, 18, 9, 0.12);
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+}
+
+html {
+  scroll-behavior: smooth;
+  background: var(--color-parchment);
+  scrollbar-color: var(--color-soil-500) var(--color-parchment);
+  overflow-y: scroll;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(61, 90, 62, 0.04) 0%, transparent 60%) fixed,
+    radial-gradient(ellipse at 80% 100%, rgba(196, 149, 106, 0.05) 0%, transparent 60%) fixed,
+    var(--color-parchment);
+  color: var(--color-soil-800);
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+
+*:focus-visible {
+  outline: 3px solid var(--color-olive-600);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: var(--color-parchment); }
+::-webkit-scrollbar-thumb { background: var(--color-soil-500); border-radius: 100px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-soil-700); }
+
+@keyframes cardIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes alertIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse-ring {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(61,90,62,0.3); }
+  50% { box-shadow: 0 0 0 8px rgba(61,90,62,0); }
+}
+
+@keyframes shimmer-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.75; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

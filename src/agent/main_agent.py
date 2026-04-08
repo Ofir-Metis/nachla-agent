@@ -199,6 +199,9 @@ class NachlaAgent:
         self.workflow = WorkflowState()
         self.tools: dict[str, ToolDescriptor] = {}
         self.system_prompt: str = ""
+        self.llm_client: Any | None = None  # Set via attach_llm()
+        self._uploaded_files: dict[str, str] = {}
+        self._document_context: str = ""
 
         # Hooks
         self.pre_tool_hook = PreToolUseHook()
@@ -207,6 +210,15 @@ class NachlaAgent:
 
         # Register calculation tools
         self._register_tools()
+
+    def attach_llm(self, llm_client: Any) -> None:
+        """Attach an LLM client for document analysis, classification, and narrative generation.
+
+        Args:
+            llm_client: An LLMClient instance from agent.llm_client.
+        """
+        self.llm_client = llm_client
+        logger.info("LLM client attached to agent")
 
     def _register_tools(self) -> None:
         """Register all calculation tools with metadata.
@@ -480,7 +492,7 @@ class NachlaAgent:
         tabas = await self._run_taba_analysis(nachla)
 
         # Step 2: Building mapping
-        buildings = await self._run_building_mapping(nachla)
+        buildings = await self._run_building_mapping(nachla, uploaded_files)
 
         # Step 3.4: Classification checkpoint (BLOCKS until confirmed)
         buildings = await self._run_classification_checkpoint(buildings)
@@ -489,7 +501,7 @@ class NachlaAgent:
         calc_results = await self._run_calculations(nachla, buildings, tabas)
 
         # Step 12: Report generation
-        report_data = self._build_report_data(nachla, buildings, tabas, calc_results)
+        report_data = await self._build_report_data(nachla, buildings, tabas, calc_results)
 
         # Step 13: Review
         await self._run_review(report_data)
@@ -576,14 +588,17 @@ class NachlaAgent:
         self.workflow.complete_current_phase()
         return tabas
 
-    async def _run_building_mapping(self, nachla: Nachla) -> list[Building]:
+    async def _run_building_mapping(
+        self, nachla: Nachla, uploaded_files: dict[str, str] | None = None,
+    ) -> list[Building]:
         """Step 2: Map buildings from survey map.
 
-        Buildings come from the nachla model (populated by document parsing
-        or manual input).
+        If no buildings are provided in the nachla model and an LLM client
+        is attached, uses Claude to extract buildings from uploaded documents.
 
         Args:
             nachla: The nachla model.
+            uploaded_files: Dict mapping file type to file path.
 
         Returns:
             List of Building models.
@@ -592,6 +607,16 @@ class NachlaAgent:
         logger.info("Step 2: Building mapping")
 
         buildings: list[Building] = []
+
+        # Try LLM document analysis if no buildings provided
+        if not nachla.buildings and self.llm_client and uploaded_files:
+            logger.info("No buildings in intake data, running LLM document analysis")
+            extracted_buildings, extracted_tabas = await self.analyze_uploaded_documents(uploaded_files)
+            if extracted_buildings:
+                nachla.buildings = extracted_buildings
+            if extracted_tabas and not nachla.tabas:
+                nachla.tabas = extracted_tabas
+
         if nachla.buildings:
             for b in nachla.buildings:
                 if isinstance(b, Building):
@@ -600,8 +625,12 @@ class NachlaAgent:
                         building_id=b.id,
                         building_name=b.name,
                         classification=b.building_type.value,
-                        reasoning="Initial classification from survey map analysis",
+                        reasoning="Initial classification from document analysis",
                     )
+
+        # Enhance classifications with LLM if available
+        if self.llm_client and buildings:
+            buildings = await self.classify_buildings_with_llm(buildings)
 
         self.workflow.buildings = buildings
         self.workflow.advance(WorkflowPhase.CLASSIFICATION)
@@ -1039,7 +1068,7 @@ class NachlaAgent:
                 results[f"building_{building.id}"] = {"error": str(exc)}
         return results
 
-    def _build_report_data(
+    async def _build_report_data(
         self,
         nachla: Nachla,
         buildings: list[Building],
@@ -1073,6 +1102,9 @@ class NachlaAgent:
 
         # Add priority area disclaimer
         report.add_priority_area_disclaimer(nachla.priority_area.value)
+
+        # Generate narrative sections with LLM
+        report = await self.generate_report_narratives(report)
 
         # Store in workflow
         self.workflow.report_data = report
@@ -1114,6 +1146,251 @@ class NachlaAgent:
         # For now, return a placeholder path
         logger.info("Step 12: Report generation (placeholder)")
         return "report_placeholder.docx"
+
+    # ------------------------------------------------------------------
+    # LLM-powered methods (require attach_llm to have been called)
+    # ------------------------------------------------------------------
+
+    async def analyze_uploaded_documents(
+        self,
+        file_paths: dict[str, str],
+    ) -> tuple[list[Building], list[Taba]]:
+        """Parse uploaded PDFs and extract building/taba data using Claude.
+
+        Args:
+            file_paths: Dict mapping file type ("survey_map", "building_permits", etc.) to file path.
+
+        Returns:
+            Tuple of (buildings, tabas) extracted from documents.
+        """
+        if not self.llm_client:
+            logger.warning("No LLM client attached, cannot analyze documents")
+            return [], []
+
+        from documents.pdf_parser import PDFParser
+
+        parser = PDFParser()
+        all_text_parts: list[str] = []
+        all_tables: list[list[list[str]]] = []
+
+        for file_type, fpath in file_paths.items():
+            try:
+                parsed = parser.parse(fpath)
+                all_text_parts.append(f"--- {file_type} ---\n{parsed.text}")
+                all_tables.extend(parsed.tables)
+                self.audit_logger.log_data_source(
+                    source_type=file_type,
+                    source_name=fpath,
+                    source_date=parsed.metadata.get("creation_date"),
+                    file_path=fpath,
+                )
+                if parsed.warnings:
+                    for w in parsed.warnings:
+                        logger.warning("Document warning (%s): %s", file_type, w)
+            except Exception as exc:
+                logger.error("Failed to parse %s (%s): %s", file_type, fpath, exc)
+
+        if not all_text_parts:
+            return [], []
+
+        combined_text = "\n\n".join(all_text_parts)
+        self._document_context = combined_text
+
+        extraction_prompt = (
+            "Extract all buildings visible in these documents.\n"
+            "For each building, identify:\n"
+            "- name (Hebrew description)\n"
+            "- building_type (residential/service/agricultural/plach/pergola/pool/"
+            "basement_service/basement_residential/attic/ground_floor_open/"
+            "ground_floor_closed/temporary/shed_open/pre_1965)\n"
+            "- main_area_sqm (numeric)\n"
+            "- service_area_sqm (numeric, 0 if none)\n"
+            "- pergola_area_sqm (numeric, 0 if none)\n"
+            "- basement_area_sqm (numeric, 0 if none)\n"
+            "- mamad_area_sqm (numeric, 0 if none)\n"
+            "- permit_year (year of building permit, null if no permit)\n"
+            "- permit_area_sqm (permitted area, null if no permit)\n"
+            "- status (compliant/deviation/no_permit/marked_demolition/building_line_violation)\n"
+            "- deviation_sqm (if status is deviation, the excess area)\n"
+            "- construction_year (if identifiable)\n\n"
+            "Also extract taba (zoning plan) information if present:\n"
+            "- taba_number, taba_name, status, approval_date\n"
+            "- plot_size_sqm, num_units_allowed\n"
+            "- unit rights (main_area_sqm, service_area_sqm per unit)\n\n"
+            "Return JSON: {\"buildings\": [...], \"tabas\": [...]}"
+        )
+
+        try:
+            result = await self.llm_client.analyze_document(
+                system=self.system_prompt,
+                document_text=combined_text,
+                document_tables=all_tables,
+                extraction_prompt=extraction_prompt,
+            )
+        except Exception as exc:
+            logger.error("LLM document analysis failed: %s", exc)
+            return [], []
+
+        # Parse buildings
+        buildings: list[Building] = []
+        raw_buildings = result.get("buildings", [])
+        for i, raw in enumerate(raw_buildings):
+            try:
+                raw.setdefault("id", i + 1)
+                raw.setdefault("building_order", i + 1)
+                raw.setdefault("user_confirmed", False)
+                building = Building(**raw)
+                buildings.append(building)
+                self.audit_logger.log_classification(
+                    building_id=building.id,
+                    building_name=building.name,
+                    classification=building.building_type.value,
+                    reasoning=raw.get("reasoning", "Extracted from documents by AI"),
+                )
+            except Exception as exc:
+                logger.warning("Failed to parse building %d from LLM: %s", i, exc)
+
+        # Parse tabas
+        tabas: list[Taba] = []
+        raw_tabas = result.get("tabas", [])
+        for raw_taba in raw_tabas:
+            try:
+                taba = Taba(**raw_taba)
+                tabas.append(taba)
+            except Exception as exc:
+                logger.warning("Failed to parse taba from LLM: %s", exc)
+
+        logger.info("Document analysis extracted %d buildings, %d tabas", len(buildings), len(tabas))
+        return buildings, tabas
+
+    async def classify_buildings_with_llm(
+        self,
+        buildings: list[Building],
+        document_context: str = "",
+    ) -> list[Building]:
+        """Enhance building classifications using Claude.
+
+        Args:
+            buildings: Buildings to classify/validate.
+            document_context: Text from parsed documents for context.
+
+        Returns:
+            Updated building list with enhanced classifications.
+        """
+        if not self.llm_client or not buildings:
+            return buildings
+
+        # Only expose lookup tools to Claude (not calculation tools)
+        lookup_tool_names = {
+            "get_priority_area", "get_discount", "get_usage_rate", "get_hivun_33_rate",
+        }
+        lookup_schemas = [
+            s for s in self.get_tool_schemas()
+            if s["name"] in lookup_tool_names
+        ]
+
+        buildings_raw = [b.model_dump() for b in buildings]
+
+        try:
+            classifications = await self.llm_client.classify_buildings(
+                system=self.system_prompt,
+                buildings_raw=buildings_raw,
+                document_context=document_context or self._document_context,
+                tools=lookup_schemas,
+                tool_executor=self.invoke_tool,
+            )
+        except Exception as exc:
+            logger.error("LLM classification failed: %s", exc)
+            return buildings
+
+        # Apply classifications back to buildings
+        classification_map = {c.get("id"): c for c in classifications if "id" in c}
+        for building in buildings:
+            if building.id in classification_map:
+                c = classification_map[building.id]
+                old_type = building.building_type.value
+                new_type = c.get("building_type", old_type)
+                new_status = c.get("status", building.status.value)
+                reasoning = c.get("reasoning", "")
+
+                try:
+                    building.building_type = BuildingType(new_type)
+                    building.status = BuildingStatus(new_status)
+                except ValueError as ve:
+                    logger.warning("Invalid classification value for building %d: %s", building.id, ve)
+                    continue
+
+                if old_type != new_type:
+                    self.audit_logger.log_classification(
+                        building_id=building.id,
+                        building_name=building.name,
+                        classification=new_type,
+                        reasoning=reasoning or "Reclassified by AI analysis",
+                    )
+
+        return buildings
+
+    async def generate_report_narratives(self, report_data: ReportData) -> ReportData:
+        """Generate professional Hebrew narrative sections for the report.
+
+        Args:
+            report_data: Report data with calculation results.
+
+        Returns:
+            Report data with narrative sections populated.
+        """
+        if not self.llm_client:
+            return report_data
+
+        nachla = report_data.nachla
+        context = {
+            "owner_name": nachla.owner_name,
+            "moshav_name": nachla.moshav_name,
+            "gush": nachla.gush,
+            "helka": nachla.helka,
+            "authorization_type": nachla.authorization_type.value,
+            "is_capitalized": nachla.is_capitalized,
+            "priority_area": nachla.priority_area.value,
+            "num_buildings": len(report_data.buildings),
+            "client_goals": [g.value for g in nachla.client_goals],
+            "total_usage_fees": report_data.total_usage_fees,
+            "total_permit_fees": report_data.total_permit_fees,
+            "hivun_375_result": report_data.hivun_375_result,
+            "hivun_33_result": report_data.hivun_33_result,
+        }
+
+        # Study objectives narrative
+        try:
+            objectives_text = await self.llm_client.generate_narrative(
+                system=self.system_prompt,
+                context=context,
+                section_prompt=(
+                    "Write a professional Hebrew paragraph (2-3 sentences) describing "
+                    "the objectives of this feasibility study. Include the owner name, "
+                    "moshav, and what the client wants to check. Be formal and concise."
+                ),
+            )
+            report_data.study_objectives = objectives_text
+        except Exception as exc:
+            logger.error("Failed to generate study objectives narrative: %s", exc)
+
+        # Recommendations narrative
+        try:
+            recommendations_text = await self.llm_client.generate_narrative(
+                system=self.system_prompt,
+                context=context,
+                section_prompt=(
+                    "Write professional Hebrew recommendations (3-5 bullet points) "
+                    "based on the calculation results. Consider the authorization type, "
+                    "capitalization status, priority area, and client goals. "
+                    "Each recommendation should be actionable."
+                ),
+            )
+            report_data.recommendations = recommendations_text
+        except Exception as exc:
+            logger.error("Failed to generate recommendations narrative: %s", exc)
+
+        return report_data
 
     def get_audit_summary(self) -> dict[str, Any]:
         """Get a summary of the audit log.

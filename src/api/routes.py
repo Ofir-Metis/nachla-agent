@@ -42,6 +42,7 @@ class IntakeRequest(BaseModel):
     has_demolition_orders: bool = Field(..., description="האם קיימים צווי הריסה")
 
     # Optional fields
+    priority_area: str = Field(default="none", description="אזור עדיפות: none / A / B / frontline")
     prior_permit_fees_purchased: float = Field(default=0, ge=0, description='דמי היתר שנרכשו בעבר (בש"ח)')
     prior_permit_fees_date: int | None = Field(default=None, description="שנת רכישת דמי היתר")
     agricultural_activity: str | None = Field(default=None, description="פעילות חקלאית קיימת")
@@ -57,12 +58,26 @@ class JobStatusResponse(BaseModel):
     phase: str
     progress_percent: int = Field(ge=0, le=100)
     message: str  # Hebrew status message
+    sub_steps: list[dict[str, str]] = Field(default_factory=list)
+
+
+class BuildingConfirmItem(BaseModel):
+    """A single building item in the classification confirmation request."""
+
+    id: int
+    building_type: str = Field(..., description="סוג מבנה - ערכי BuildingType")
+    status: str = Field(..., description="סטטוס מבנה - ערכי BuildingStatus")
+    main_area_sqm: float = Field(ge=0, description='שטח עיקרי במ"ר')
+    name: str = ""
+    basement_type: str | None = None
+    pergola_roof_type: str | None = None
+    is_pre_1965: bool = False
 
 
 class ClassificationConfirmRequest(BaseModel):
     """Request body for confirming building classifications."""
 
-    buildings: list[dict[str, Any]] = Field(..., description="רשימת מבנים עם סיווג מאושר")
+    buildings: list[BuildingConfirmItem] = Field(..., description="רשימת מבנים עם סיווג מאושר")
 
 
 class JobCreateResponse(BaseModel):
@@ -80,6 +95,28 @@ class FileUploadResponse(BaseModel):
     files_received: int
     file_names: list[str]
     message: str
+
+
+class BuildingsResponse(BaseModel):
+    """Response containing the building list for classification checkpoint."""
+
+    job_id: str
+    buildings: list[dict[str, Any]]
+    count: int
+
+
+class ResultsResponse(BaseModel):
+    """Response containing cost summary for the results page."""
+
+    job_id: str
+    total_regularization_cost: float = 0
+    total_usage_fees: float = 0
+    total_permit_fees: float = 0
+    betterment_levy: float = 0
+    hivun_375_total: float | None = None
+    hivun_33_total: float | None = None
+    building_cards: list[dict[str, Any]] = []
+    download_types: list[str] = []
 
 
 # --- Helper Functions ---
@@ -274,13 +311,137 @@ async def confirm_classification(
             detail=(f"העבודה אינה בשלב אישור סיווג. סטטוס נוכחי: {job.state}"),
         )
 
-    await queue.resume_after_checkpoint(job_id, body.buildings)
+    confirmed = [b.model_dump() for b in body.buildings]
+    await queue.resume_after_checkpoint(job_id, confirmed)
 
     return {
         "job_id": job_id,
         "status": "running",
         "message": "סיווג המבנים אושר. ממשיך בחישובים...",
         "buildings_confirmed": len(body.buildings),
+    }
+
+
+@router.get("/jobs/{job_id}/buildings", response_model=BuildingsResponse)
+async def get_job_buildings(job_id: str, request: Request) -> BuildingsResponse:
+    """Return the building list for the classification checkpoint table.
+
+    Args:
+        job_id: Job identifier.
+        request: FastAPI request.
+
+    Returns:
+        Building list with count.
+
+    Raises:
+        HTTPException: If job not found or buildings not yet mapped.
+    """
+    queue = _get_job_queue(request)
+    job = await queue.get_status(job_id)
+
+    if job is None:
+        raise HTTPException(
+            status_code=404,
+            detail="העבודה לא נמצאה",
+        )
+
+    if not job.buildings:
+        raise HTTPException(
+            status_code=400,
+            detail="המבנים טרם מופו",
+        )
+
+    return BuildingsResponse(
+        job_id=job.id,
+        buildings=job.buildings,
+        count=len(job.buildings),
+    )
+
+
+@router.get("/jobs/{job_id}/results", response_model=ResultsResponse)
+async def get_job_results(job_id: str, request: Request) -> ResultsResponse:
+    """Return cost summary for the results page before download.
+
+    Args:
+        job_id: Job identifier.
+        request: FastAPI request.
+
+    Returns:
+        Cost summary with building cards and available download types.
+
+    Raises:
+        HTTPException: If job not found or not yet complete.
+    """
+    queue = _get_job_queue(request)
+    job = await queue.get_status(job_id)
+
+    if job is None:
+        raise HTTPException(
+            status_code=404,
+            detail="העבודה לא נמצאה",
+        )
+
+    if job.state != "complete":
+        raise HTTPException(
+            status_code=400,
+            detail="הבדיקה טרם הושלמה",
+        )
+
+    result = job.result or {}
+
+    # Determine which download types are available
+    file_key_map = {
+        "word": "word_path",
+        "excel": "excel_path",
+        "audit": "audit_path",
+        "pdf": "pdf_path",
+    }
+    download_types = [ft for ft, key in file_key_map.items() if result.get(key)]
+
+    # Extract hivun totals — support both flat keys and nested result dicts
+    hivun_375_total = result.get("hivun_375_total")
+    if hivun_375_total is None:
+        hivun_375 = result.get("hivun_375_result")
+        hivun_375_total = hivun_375.get("total_cost") if isinstance(hivun_375, dict) else None
+    hivun_33_total = result.get("hivun_33_total")
+    if hivun_33_total is None:
+        hivun_33 = result.get("hivun_33_result")
+        hivun_33_total = hivun_33.get("total_cost") if isinstance(hivun_33, dict) else None
+
+    return ResultsResponse(
+        job_id=job.id,
+        total_regularization_cost=result.get("total_regularization_cost", 0),
+        total_usage_fees=result.get("total_usage_fees", 0),
+        total_permit_fees=result.get("total_permit_fees", 0),
+        betterment_levy=result.get("betterment_levy", 0),
+        hivun_375_total=hivun_375_total,
+        hivun_33_total=hivun_33_total,
+        building_cards=result.get("building_cards", []),
+        download_types=download_types,
+    )
+
+
+@router.get("/labels")
+async def get_labels() -> dict[str, dict[str, str]]:
+    """Return all Hebrew label dictionaries for the React frontend.
+
+    Returns:
+        Dict with all label dicts as nested objects.
+    """
+    from ui.components import (
+        AUTH_TYPE_LABELS,
+        BUILDING_STATUS_LABELS,
+        BUILDING_TYPE_LABELS,
+        CLIENT_GOAL_LABELS,
+        OWNERSHIP_TYPE_LABELS,
+    )
+
+    return {
+        "building_types": BUILDING_TYPE_LABELS,
+        "building_statuses": BUILDING_STATUS_LABELS,
+        "auth_types": AUTH_TYPE_LABELS,
+        "client_goals": CLIENT_GOAL_LABELS,
+        "ownership_types": OWNERSHIP_TYPE_LABELS,
     }
 
 
@@ -360,3 +521,64 @@ async def download_report(job_id: str, file_type: str, request: Request) -> File
         media_type=media_type_map[file_type],
         filename=resolved.name,
     )
+
+
+@router.post("/jobs/{job_id}/cloud-export/{target}")
+async def cloud_export(job_id: str, target: str, request: Request) -> dict:
+    """Export completed job reports to cloud storage.
+
+    Args:
+        job_id: Job identifier.
+        target: Cloud target — 'gdrive', 'onedrive', or 'all'.
+        request: FastAPI request.
+
+    Returns:
+        Status with links to uploaded files.
+    """
+    valid_targets = {"gdrive", "onedrive", "all"}
+    if target not in valid_targets:
+        raise HTTPException(
+            status_code=400,
+            detail=f'יעד שמירה לא תקין. אפשרויות: {", ".join(sorted(valid_targets))}',
+        )
+
+    job_queue: JobQueue = request.app.state.job_queue
+    job = job_queue.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="העבודה לא נמצאה.")
+    if job.state != "complete" or job.result is None:
+        raise HTTPException(status_code=400, detail="הדוח טרם הופק.")
+
+    results: dict[str, Any] = {"target": target, "files": []}
+    targets = ["gdrive", "onedrive"] if target == "all" else [target]
+
+    for t in targets:
+        try:
+            if t == "gdrive":
+                from integrations.gdrive_client import GoogleDriveClient
+
+                client = GoogleDriveClient()
+                for key in ["word_path", "excel_path", "pdf_path", "audit_path"]:
+                    fpath = job.result.get(key)
+                    if fpath:
+                        link = await client.upload_file(fpath, folder_name=f"nachla-{job_id}")
+                        results["files"].append({"service": "gdrive", "file": key, "link": link})
+
+            elif t == "onedrive":
+                from integrations.onedrive_client import OneDriveClient
+
+                client = OneDriveClient()
+                for key in ["word_path", "excel_path", "pdf_path", "audit_path"]:
+                    fpath = job.result.get(key)
+                    if fpath:
+                        link = await client.upload_file(fpath, folder_name=f"nachla-{job_id}")
+                        results["files"].append({"service": "onedrive", "file": key, "link": link})
+
+        except Exception as exc:
+            results.setdefault("errors", []).append({"service": t, "error": str(exc)})
+
+    return {
+        "status": "ok" if not results.get("errors") else "partial",
+        "message": "הקבצים הועלו בהצלחה" if not results.get("errors") else "חלק מהקבצים לא הועלו",
+        **results,
+    }

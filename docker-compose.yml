@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   app:
     build: .
@@ -45,21 +43,19 @@ services:
       retries: 5
     restart: unless-stopped
 
-  caddy:
-    image: caddy:2-alpine
+  frontend:
+    build: ./frontend
     ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
+      - "3000:3000"
     depends_on:
       - app
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.5"
 
 volumes:
   postgres_data:
-  caddy_data:
-  caddy_config:
   app_output:

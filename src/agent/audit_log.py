@@ -21,7 +21,7 @@ from typing import Any
 from models.report import AuditEntry
 
 # Valid entry types for filtering
-ENTRY_TYPES = frozenset({"calculation", "classification", "user_override", "data_source"})
+ENTRY_TYPES = frozenset({"calculation", "classification", "user_override", "data_source", "llm_call"})
 
 
 class AuditLogger:
@@ -159,6 +159,38 @@ class AuditLogger:
                 }
             )
 
+    def log_llm_call(
+        self,
+        task: str,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        prompt_summary: str,
+        response_summary: str,
+    ) -> None:
+        """Log an LLM API call for audit trail.
+
+        Args:
+            task: What the LLM was used for ("document_analysis", "classification", "narrative").
+            model: Model ID used (e.g., "claude-sonnet-4-6").
+            input_tokens: Number of input tokens consumed.
+            output_tokens: Number of output tokens generated.
+            prompt_summary: Brief summary of what was asked.
+            response_summary: Brief summary of what was returned.
+        """
+        with self._lock:
+            self._append(
+                {
+                    "type": "llm_call",
+                    "task": task,
+                    "model": model,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "prompt_summary": prompt_summary,
+                    "response_summary": response_summary,
+                }
+            )
+
     @property
     def entries(self) -> list[dict[str, Any]]:
         """Return a deep copy of all entries (immutable access)."""
@@ -290,6 +322,23 @@ class AuditLogger:
                             source_date=entry.get("source_date"),
                         )
                     )
+                elif entry_type == "llm_call":
+                    result.append(
+                        AuditEntry(
+                            timestamp=entry["timestamp"],
+                            tool_name=f"llm_{entry['task']}",
+                            inputs={
+                                "model": entry["model"],
+                                "prompt_summary": entry["prompt_summary"],
+                            },
+                            formula="llm_inference",
+                            rates_used={
+                                "input_tokens": entry["input_tokens"],
+                                "output_tokens": entry["output_tokens"],
+                            },
+                            result={"response_summary": entry["response_summary"]},
+                        )
+                    )
         return result
 
     def generate_summary(self) -> dict[str, Any]:
@@ -304,6 +353,7 @@ class AuditLogger:
             classifications = [e for e in self._entries if e["type"] == "classification"]
             overrides = [e for e in self._entries if e["type"] == "user_override"]
             sources = [e for e in self._entries if e["type"] == "data_source"]
+            llm_calls = [e for e in self._entries if e["type"] == "llm_call"]
 
             # Collect all unique rates used across calculations
             rates_summary: dict[str, Any] = {}
@@ -318,12 +368,19 @@ class AuditLogger:
                 timestamp_range["first"] = timestamps[0]
                 timestamp_range["last"] = timestamps[-1]
 
+            # LLM token totals
+            total_input_tokens = sum(e.get("input_tokens", 0) for e in llm_calls)
+            total_output_tokens = sum(e.get("output_tokens", 0) for e in llm_calls)
+
             return {
                 "total_entries": len(self._entries),
                 "calculations": len(calcs),
                 "classifications": len(classifications),
                 "user_overrides": len(overrides),
                 "data_sources": len(sources),
+                "llm_calls": len(llm_calls),
+                "llm_total_input_tokens": total_input_tokens,
+                "llm_total_output_tokens": total_output_tokens,
                 "rates_used_summary": rates_summary,
                 "timestamp_range": timestamp_range,
             }

@@ -67,6 +67,18 @@ class AppSettings(BaseSettings):
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
+    def validate_anthropic_config(self) -> None:
+        """Validate that the Anthropic API key is configured.
+
+        Raises:
+            ValueError: If the API key is empty or not set.
+        """
+        if not self.anthropic_api_key:
+            raise ValueError(
+                "ANTHROPIC_API_KEY is required but not set. "
+                "Add it to your .env file: ANTHROPIC_API_KEY=sk-ant-..."
+            )
+
     def load_rates_config(self) -> dict[str, Any]:
         """Load rates from rates_config.json.
 
