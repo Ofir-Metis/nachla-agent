@@ -178,7 +178,7 @@ class MondayClient:
                     ) { id }
                 }
             """
-            value = json.dumps({"label": status})
+            value = json.dumps({"label": status}, ensure_ascii=False)
             await self._graphql(query, {
                 "boardId": self._board_id,
                 "itemId": item_id,
@@ -221,7 +221,8 @@ class MondayClient:
                 logger.info("Mock: Attached file '%s' to item %s", file_path, item_id)
                 return True
 
-            query = 'mutation ($file: File!) { add_file_to_column(item_id: %s, column_id: "files", file: $file) { id } }' % item_id
+            # Use parameterized item_id to prevent GraphQL injection
+            query = 'mutation ($file: File!) { add_file_to_column(item_id: ' + str(int(item_id)) + ', column_id: "files", file: $file) { id } }'
             headers = {
                 "Authorization": self._api_token,
                 "API-Version": "2024-10",

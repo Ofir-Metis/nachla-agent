@@ -777,7 +777,8 @@ class TestLookupTables:
 
     def test_development_costs_found(self):
         result = lookup_development_costs("חבל יבנה")
-        assert result == 247_000.0
+        assert result["development_costs"] == 247_000.0
+        assert result["result"] == 247_000.0
 
 
 # ===================================================================

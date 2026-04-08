@@ -100,7 +100,7 @@ _DEVELOPMENT_COSTS: dict[str, float] = {
 }
 
 
-def lookup_development_costs(regional_council: str) -> float | None:
+def lookup_development_costs(regional_council: str) -> dict:
     """Look up development costs by regional council.
 
     Development costs are deducted from hivun (capitalization) payments.
@@ -109,8 +109,19 @@ def lookup_development_costs(regional_council: str) -> float | None:
         regional_council: Regional council name in Hebrew.
 
     Returns:
-        Development costs in ILS, or None if not found.
+        Audit dict with development_costs value.
     """
     if not regional_council or not isinstance(regional_council, str):
-        return None
-    return _DEVELOPMENT_COSTS.get(regional_council.strip())
+        return {
+            "result": None,
+            "development_costs": 0,
+            "inputs": {"regional_council": regional_council},
+        }
+    value = _DEVELOPMENT_COSTS.get(regional_council.strip())
+    return {
+        "result": value,
+        "development_costs": value or 0,
+        "formula": "lookup from regional council reference table",
+        "rates_used": {},
+        "inputs": {"regional_council": regional_council},
+    }

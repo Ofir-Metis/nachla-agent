@@ -1,4 +1,6 @@
 {
+  "_last_updated": "2026-04-08",
+  "data_freshness_warning_days": 90,
   "vat_rate": {
     "value": 0.18,
     "effective_date": "2025-01-01",

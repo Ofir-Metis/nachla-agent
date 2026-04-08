@@ -92,7 +92,7 @@ export default function ProcessingPage() {
 
       {/* Checkpoint button */}
       {isCheckpoint && (
-        <div className="mt-6 flex">
+        <div className="mt-6 flex max-sm:sticky max-sm:bottom-0 max-sm:bg-[rgba(255,253,248,0.95)] max-sm:backdrop-blur-sm max-sm:z-20 max-sm:pb-3 max-sm:pt-3 max-sm:-mx-5 max-sm:px-5">
           <button
             type="button"
             className="ms-auto px-6 py-2.5 rounded-[--radius-md] font-semibold text-[0.9rem] bg-olive-700 text-white hover:bg-olive-600 active:scale-[0.98] transition-all cursor-pointer flex items-center gap-1"

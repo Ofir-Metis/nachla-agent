@@ -555,14 +555,10 @@ class JobQueue:
         self._tasks.clear()
         logger.info("Job queue shutdown complete")
 
-    def list_jobs(self, status_filter: str | None = None) -> list[Job]:
-        """List all jobs, optionally filtered by status.
+    def list_jobs_sync(self, status_filter: str | None = None) -> list[Job]:
+        """List in-memory jobs synchronously, optionally filtered by status.
 
-        Args:
-            status_filter: Optional status string to filter by.
-
-        Returns:
-            List of matching Job objects.
+        For internal use only. The async list_jobs() method includes DB results.
         """
         jobs = list(self._jobs.values())
         if status_filter:
