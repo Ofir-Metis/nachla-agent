@@ -332,16 +332,6 @@ class JobQueue:
             priority = nachla.priority_area.value if nachla.priority_area else None
             agent.system_prompt = build_system_prompt(priority_area=priority)
 
-            # Build uploaded file paths dict
-            uploaded_files: dict[str, str] = {}
-            for fpath in job.uploaded_files:
-                if "survey" in fpath.lower() or "מדידה" in fpath:
-                    uploaded_files["survey_map"] = fpath
-                elif "permit" in fpath.lower() or "היתר" in fpath:
-                    uploaded_files["building_permits"] = fpath
-                else:
-                    uploaded_files[fpath] = fpath
-
             # --- Phase 1: Intake ---
             job.phase = "intake"
             job.progress = 5
@@ -357,6 +347,25 @@ class JobQueue:
             # --- Phase 3: Building mapping (uses LLM for document analysis) ---
             job.phase = "building_mapping"
             job.progress = 30
+
+            # Wait briefly for file uploads to arrive (uploaded async after job creation)
+            if not job.uploaded_files:
+                for _ in range(10):  # Wait up to 10 seconds
+                    await asyncio.sleep(1)
+                    if job.uploaded_files:
+                        break
+
+            # Build uploaded file paths dict
+            uploaded_files: dict[str, str] = {}
+            for fpath in job.uploaded_files:
+                if "survey" in fpath.lower() or "מדידה" in fpath:
+                    uploaded_files["survey_map"] = fpath
+                elif "permit" in fpath.lower() or "היתר" in fpath:
+                    uploaded_files["building_permits"] = fpath
+                else:
+                    uploaded_files[fpath] = fpath
+            logger.info("Job %s: %d uploaded files available", job_id, len(uploaded_files))
+
             buildings = await agent._run_building_mapping(nachla, uploaded_files)
             if monday_client and monday_item_id:
                 asyncio.create_task(monday_client.update_status(monday_item_id, "מיפוי מבנים הושלם"))
@@ -373,8 +382,12 @@ class JobQueue:
                         logger.warning("Failed to parse confirmed building: %s", exc)
                 agent.workflow.confirm_classifications()
             else:
-                # No buildings found — skip checkpoint, proceed with empty list
+                # No buildings found — mark classification/checkpoint as done to unblock workflow
                 agent.workflow.classifications_confirmed = True
+                from agent.workflow import WorkflowPhase
+                for phase in (WorkflowPhase.CLASSIFICATION, WorkflowPhase.CHECKPOINT):
+                    if phase not in agent.workflow.completed_phases:
+                        agent.workflow.completed_phases.append(phase)
                 logger.warning("Job %s: No buildings found, skipping checkpoint", job_id)
 
             # --- Phases 4-11: Calculations ---
