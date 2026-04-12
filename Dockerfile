@@ -32,7 +32,9 @@ COPY --from=builder /usr/local /usr/local
 
 # Copy application code
 COPY . .
-RUN chown -R appuser:appuser /app
+
+# Create output directory and ensure appuser owns it
+RUN mkdir -p /app/output /app/data/templates && chown -R appuser:appuser /app
 
 USER appuser
 
