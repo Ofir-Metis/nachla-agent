@@ -118,16 +118,25 @@ class HealthChecker:
                     "error": f"Parent directory does not exist: {parent}",
                 }
             else:
-                # PostgreSQL: try importing asyncpg to see if driver is available
+                # PostgreSQL: actually test connectivity
                 try:
-                    import asyncpg  # noqa: F401
-
-                    return {"status": "ok", "type": db_type, "driver": "asyncpg"}
+                    from config.database import get_engine
+                    from sqlalchemy import text
+                    engine = await get_engine()
+                    async with engine.connect() as conn:
+                        await conn.execute(text("SELECT 1"))
+                    return {"status": "ok", "type": db_type, "driver": engine.dialect.name}
                 except ImportError:
                     return {
                         "status": "warning",
                         "type": db_type,
                         "error": "asyncpg not installed - cannot verify PostgreSQL connectivity",
+                    }
+                except Exception as db_exc:
+                    return {
+                        "status": "error",
+                        "type": db_type,
+                        "error": f"Cannot connect to PostgreSQL: {db_exc}",
                     }
         except Exception as exc:
             logger.exception("Database health check failed")

@@ -136,13 +136,14 @@ class JobQueue:
             return
         try:
             from datetime import datetime, timezone
-            from config.database import get_session_factory, jobs_table
-            from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+            from config.database import get_engine, get_session_factory, jobs_table
 
             now = datetime.now(timezone.utc)
+            engine = await get_engine()
+            dialect_name = engine.dialect.name  # "sqlite" or "postgresql"
+
             factory = await get_session_factory()
             async with factory() as session:
-                # Upsert: try insert, on conflict update
                 values = {
                     "id": job.id,
                     "state": job.state,
@@ -159,20 +160,25 @@ class JobQueue:
                     "created_at": now,
                     "updated_at": now,
                 }
-                # Use SQLite-compatible upsert
-                stmt = sqlite_insert(jobs_table).values(**values)
-                stmt = stmt.on_conflict_do_update(
-                    index_elements=["id"],
-                    set_={
-                        "state": values["state"],
-                        "phase": values["phase"],
-                        "progress": values["progress"],
-                        "buildings": values["buildings"],
-                        "result": values["result"],
-                        "error": values["error"],
-                        "updated_at": now,
-                    },
-                )
+                update_set = {
+                    "state": values["state"],
+                    "phase": values["phase"],
+                    "progress": values["progress"],
+                    "buildings": values["buildings"],
+                    "result": values["result"],
+                    "error": values["error"],
+                    "updated_at": now,
+                }
+
+                if dialect_name == "postgresql":
+                    from sqlalchemy.dialects.postgresql import insert as pg_insert
+                    stmt = pg_insert(jobs_table).values(**values)
+                    stmt = stmt.on_conflict_do_update(index_elements=["id"], set_=update_set)
+                else:
+                    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+                    stmt = sqlite_insert(jobs_table).values(**values)
+                    stmt = stmt.on_conflict_do_update(index_elements=["id"], set_=update_set)
+
                 await session.execute(stmt)
                 await session.commit()
         except Exception as exc:

@@ -291,11 +291,16 @@ class MondayClient:
         )
 
     async def retry_failed_operations(self) -> int:
-        """Attempt to retry all queued failed operations."""
+        """Drop stale failed operations from the queue.
+
+        NOTE: True retry is not implemented because FailedOperation does not
+        capture the callable. Failed operations are logged and discarded
+        after 10 queuing attempts. Monday.com failures are non-critical.
+        """
         if not self._failed_queue:
             return 0
 
-        retried = 0
+        dropped = 0
         remaining: deque[FailedOperation] = deque()
 
         while self._failed_queue:
@@ -306,8 +311,9 @@ class MondayClient:
                     "Dropping Monday.com operation '%s' after %d attempts",
                     op.operation, op.attempts,
                 )
+                dropped += 1
                 continue
             remaining.append(op)
 
         self._failed_queue = remaining
-        return retried
+        return dropped

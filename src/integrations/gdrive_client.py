@@ -75,7 +75,7 @@ class GoogleDriveClient:
                 scopes=["https://www.googleapis.com/auth/drive"],
             )
 
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             self._service = await loop.run_in_executor(
                 None,
                 partial(build, "drive", "v3", credentials=credentials),
@@ -136,7 +136,7 @@ class GoogleDriveClient:
             if parent_id:
                 query += f" and '{parent_id}' in parents"
 
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             results = await loop.run_in_executor(
                 None,
                 lambda: self._service.files()
@@ -226,7 +226,7 @@ class GoogleDriveClient:
             }
             media = MediaFileUpload(local_path, mimetype=mime_type, resumable=True)
 
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(
                 None,
                 lambda: self._service.files()
@@ -270,7 +270,7 @@ class GoogleDriveClient:
             return None
 
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
 
             # Create 'anyone with link' permission
             permission = {"type": "anyone", "role": "reader"}

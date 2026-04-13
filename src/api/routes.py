@@ -774,23 +774,37 @@ async def cloud_export(job_id: str, target: str, request: Request) -> CloudExpor
     results: dict[str, Any] = {"target": target, "files": []}
     targets = ["gdrive", "onedrive"] if target == "all" else [target]
 
+    # Collect files to upload
+    report_files: dict[str, str] = {}
+    for key in ["word_path", "excel_path", "pdf_path", "audit_path"]:
+        fpath = job.result.get(key)
+        if fpath:
+            report_files[key.replace("_path", "")] = fpath
+
+    owner_name = job.intake_data.get("owner_name", "unknown")
+    moshav_name = job.intake_data.get("moshav_name", "unknown")
+
     for t in targets:
         try:
             if t == "gdrive":
-                if not os.getenv("GOOGLE_CREDENTIALS_PATH"):
+                if not os.getenv("GOOGLE_DRIVE_CREDENTIALS_PATH"):
                     results.setdefault("errors", []).append({
                         "service": "gdrive",
-                        "error": "חסרים פרטי התחברות ל-Google Drive. אנא הגדירו GOOGLE_CREDENTIALS_PATH.",
+                        "error": "חסרים פרטי התחברות ל-Google Drive. אנא הגדירו GOOGLE_DRIVE_CREDENTIALS_PATH.",
                     })
                     continue
                 from integrations.gdrive_client import GoogleDriveClient
 
-                client = GoogleDriveClient()
-                for key in ["word_path", "excel_path", "pdf_path", "audit_path"]:
-                    fpath = job.result.get(key)
-                    if fpath:
-                        link = await client.upload_file(fpath, folder_name=f"nachla-{job_id}")
-                        results["files"].append({"service": "gdrive", "file": key, "link": link})
+                gdrive = GoogleDriveClient()
+                if not await gdrive.authenticate():
+                    results.setdefault("errors", []).append({
+                        "service": "gdrive",
+                        "error": "שגיאה בהתחברות ל-Google Drive.",
+                    })
+                    continue
+                links = await gdrive.upload_report(owner_name, moshav_name, report_files)
+                for file_key, link in links.items():
+                    results["files"].append({"service": "gdrive", "file": file_key, "link": link})
 
             elif t == "onedrive":
                 if not os.getenv("ONEDRIVE_CLIENT_ID"):
@@ -801,12 +815,16 @@ async def cloud_export(job_id: str, target: str, request: Request) -> CloudExpor
                     continue
                 from integrations.onedrive_client import OneDriveClient
 
-                client = OneDriveClient()
-                for key in ["word_path", "excel_path", "pdf_path", "audit_path"]:
-                    fpath = job.result.get(key)
-                    if fpath:
-                        link = await client.upload_file(fpath, folder_name=f"nachla-{job_id}")
-                        results["files"].append({"service": "onedrive", "file": key, "link": link})
+                od = OneDriveClient()
+                if not await od.authenticate():
+                    results.setdefault("errors", []).append({
+                        "service": "onedrive",
+                        "error": "שגיאה בהתחברות ל-OneDrive.",
+                    })
+                    continue
+                links = await od.upload_report(owner_name, moshav_name, report_files)
+                for file_key, link in links.items():
+                    results["files"].append({"service": "onedrive", "file": file_key, "link": link})
 
         except Exception as exc:
             logger.error("Cloud export %s failed: %s", t, exc)
