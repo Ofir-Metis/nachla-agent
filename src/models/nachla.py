@@ -88,6 +88,9 @@ class Nachla(BaseModel):
     # Regional council (for development cost lookups)
     regional_council: str | None = Field(default=None, description="מועצה אזורית (לחישוב עלויות פיתוח)")
 
+    # Land value (looked up from settlement tables or provided by appraiser)
+    shovi_per_sqm: float = Field(default=7000, ge=0, description='שווי מ"ר אקוויוולנטי (ש"ח)')
+
     # Prior permit fees (expert review #23: only post-2009 counts for 33% deduction)
     prior_permit_fees_purchased: float = Field(default=0, ge=0, description='דמי היתר שנרכשו בעבר (בש"ח)')
     prior_permit_fees_date: int | None = Field(

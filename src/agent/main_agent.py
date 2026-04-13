@@ -863,26 +863,27 @@ class NachlaAgent:
             Usage fee results dict.
         """
         results: dict[str, Any] = {"building_fees": {}, "total": 0}
+        shovi = nachla.shovi_per_sqm if hasattr(nachla, 'shovi_per_sqm') else 7000
         for building in buildings:
             try:
+                # Calculate usage fee for main area
+                usage_type = "agricultural" if building.building_type == BuildingType.AGRICULTURAL else "residential"
                 fee_result = await self.invoke_tool(
                     "calculate_dmei_shimush",
                     {
-                        "building_id": building.id,
-                        "building_type": building.building_type.value,
+                        "area_sqm": building.main_area_sqm + (building.deviation_sqm or 0),
+                        "area_type": "main",
+                        "shovi_per_sqm": shovi,
+                        "usage_type": usage_type,
                         "building_order": building.building_order,
-                        "main_area_sqm": building.main_area_sqm,
-                        "service_area_sqm": building.service_area_sqm,
-                        "pergola_area_sqm": building.pergola_area_sqm,
-                        "status": building.status.value,
-                        "deviation_sqm": building.deviation_sqm or 0,
-                        "priority_area": nachla.priority_area.value,
                         "has_intergenerational_continuity": nachla.has_intergenerational_continuity,
+                        "priority_area": nachla.priority_area.value if nachla.priority_area else None,
                     },
                 )
                 results["building_fees"][building.id] = fee_result
-                results[f"building_{building.id}_usage_fees"] = fee_result.get("total_fees", 0)
-                results["total"] += fee_result.get("total_fees", 0)
+                fee_amount = fee_result.get("result", 0)
+                results[f"building_{building.id}_usage_fees"] = fee_amount
+                results["total"] += fee_amount
             except CalculationInputError as exc:
                 logger.warning("Usage fee input error for building %d: %s (not retrying)", building.id, exc)
                 results["building_fees"][building.id] = {"error": str(exc), "input_error": True}
@@ -908,12 +909,37 @@ class NachlaAgent:
             Sqm equivalent results.
         """
         try:
+            # Get plot size from primary taba
+            primary_taba = next((t for t in tabas if t.is_primary), tabas[0] if tabas else None)
+            plot_size = primary_taba.plot_size_sqm if primary_taba else 2500
+
+            # Sum building coverages
+            coverage = sum(b.main_area_sqm + b.service_area_sqm for b in buildings)
+
+            # Build taba rights from primary taba
+            taba_rights: dict[str, float] = {}
+            if primary_taba and primary_taba.unit_rights:
+                total_main = sum(ur.main_area_sqm for ur in primary_taba.unit_rights)
+                total_service = sum(ur.service_area_sqm for ur in primary_taba.unit_rights)
+                taba_rights = {
+                    "main_sqm": total_main,
+                    "service_sqm": total_service,
+                    "mamad_sqm": sum(ur.mamad_sqm for ur in primary_taba.unit_rights),
+                }
+            else:
+                # Estimate from buildings if no taba rights
+                taba_rights = {
+                    "main_sqm": sum(b.main_area_sqm for b in buildings),
+                    "service_sqm": sum(b.service_area_sqm for b in buildings),
+                    "mamad_sqm": sum(b.mamad_area_sqm for b in buildings),
+                }
+
             result = await self.invoke_tool(
                 "calculate_nachla_sqm_equivalent",
                 {
-                    "buildings": [b.model_dump() for b in buildings],
-                    "tabas": [t.model_dump() for t in tabas],
-                    "priority_area": nachla.priority_area.value,
+                    "plot_size_sqm": plot_size,
+                    "building_coverage_sqm": coverage,
+                    "taba_rights": taba_rights,
                 },
             )
             return result
@@ -951,13 +977,15 @@ class NachlaAgent:
             except Exception as exc:
                 logger.warning("Development costs lookup failed: %s", exc)
 
+        shovi = sqm_results.get("shovi_meter_aku") or (nachla.shovi_per_sqm if hasattr(nachla, 'shovi_per_sqm') else 7000)
+
         try:
             result_375 = await self.invoke_tool(
                 "calculate_hivun_375",
                 {
-                    "sqm_equivalent": sqm_results.get("total_nachla_sqm", 808),
-                    "shovi_meter_aku": sqm_results.get("shovi_meter_aku", 0),
-                    "priority_area": nachla.priority_area.value,
+                    "sqm_equivalent_375": sqm_results.get("result", 808),
+                    "shovi_per_sqm": shovi,
+                    "priority_area": nachla.priority_area.value if nachla.priority_area else None,
                     "development_costs": dev_costs,
                 },
             )
@@ -971,11 +999,11 @@ class NachlaAgent:
             result_33 = await self.invoke_tool(
                 "calculate_hivun_33",
                 {
-                    "sqm_equivalent": sqm_results.get("total_nachla_sqm", 0),
-                    "potential_sqm": sqm_results.get("potential_sqm", 0),
-                    "shovi_meter_aku": sqm_results.get("shovi_meter_aku", 0),
-                    "prior_permit_fees": nachla.prior_permit_fees_purchased if nachla.prior_fees_deductible else 0,
-                    "priority_area": nachla.priority_area.value,
+                    "sqm_equivalent_nachla": sqm_results.get("result", 0),
+                    "sqm_potential": 0,
+                    "shovi_per_sqm": shovi,
+                    "prior_permit_fees_post_2009": nachla.prior_permit_fees_purchased if nachla.prior_fees_deductible else 0,
+                    "priority_area": nachla.priority_area.value if nachla.priority_area else None,
                     "development_costs": dev_costs,
                 },
             )
@@ -1006,26 +1034,33 @@ class NachlaAgent:
             if building.status in (BuildingStatus.COMPLIANT,) and building.building_type != BuildingType.PRE_1965:
                 continue
             try:
+                # Build areas list from building model
+                building_areas: list[dict[str, Any]] = []
+                if building.main_area_sqm > 0:
+                    building_areas.append({"type": "main", "area_sqm": building.main_area_sqm})
+                if building.service_area_sqm > 0:
+                    building_areas.append({"type": "service", "area_sqm": building.service_area_sqm})
+                if building.mamad_area_sqm > 0:
+                    building_areas.append({"type": "mamad", "area_sqm": building.mamad_area_sqm})
+                if building.basement_area_sqm > 0:
+                    bt = f"basement_{building.basement_type}" if building.basement_type else "basement_service"
+                    building_areas.append({"type": bt, "area_sqm": building.basement_area_sqm})
+
+                shovi = nachla.shovi_per_sqm if hasattr(nachla, 'shovi_per_sqm') else 7000
                 fee_result = await self.invoke_tool(
                     "calculate_building_permit_fees",
                     {
-                        "building_id": building.id,
-                        "building_type": building.building_type.value,
+                        "building_areas": building_areas,
+                        "shovi_per_sqm": shovi,
                         "building_order": building.building_order,
-                        "main_area_sqm": building.main_area_sqm,
-                        "service_area_sqm": building.service_area_sqm,
-                        "pergola_area_sqm": building.pergola_area_sqm,
-                        "basement_area_sqm": building.basement_area_sqm,
-                        "basement_type": building.basement_type or "",
-                        "status": building.status.value,
-                        "deviation_sqm": building.deviation_sqm or 0,
-                        "permit_area_sqm": building.permit_area_sqm or 0,
+                        "is_agricultural": building.building_type == BuildingType.AGRICULTURAL,
                         "is_pre_1965": building.is_pre_1965,
-                        "priority_area": nachla.priority_area.value,
+                        "permit_size_sqm": building.permit_area_sqm,
+                        "priority_area": nachla.priority_area.value if nachla.priority_area else None,
                     },
                 )
                 results["building_results"][building.id] = fee_result
-                fees = fee_result.get("total_permit_fees", 0)
+                fees = fee_result.get("result", 0)
                 results["permit_fees"][f"building_{building.id}_permit_fees"] = fees
                 results["total_permit_fees"] += fees
             except CalculationInputError as exc:
@@ -1040,8 +1075,8 @@ class NachlaAgent:
             cap_result = await self.invoke_tool(
                 "check_permit_fee_cap",
                 {
-                    "total_permit_fees": results["total_permit_fees"],
-                    "priority_area": nachla.priority_area.value,
+                    "total_fees": results["total_permit_fees"],
+                    "priority_area": nachla.priority_area.value if nachla.priority_area else None,
                 },
             )
             results["permit_fee_cap"] = cap_result
@@ -1117,13 +1152,15 @@ class NachlaAgent:
             if building.status == BuildingStatus.COMPLIANT:
                 continue
             try:
+                # Estimate betterment: new value = area * shovi, old value = 0 for unpermitted
+                shovi = nachla.shovi_per_sqm if hasattr(nachla, 'shovi_per_sqm') else 7000
+                new_val = building.main_area_sqm * shovi
+                old_val = (building.permit_area_sqm or 0) * shovi
                 result = await self.invoke_tool(
                     "calculate_betterment_levy",
                     {
-                        "building_id": building.id,
-                        "building_type": building.building_type.value,
-                        "main_area_sqm": building.main_area_sqm,
-                        "priority_area": nachla.priority_area.value,
+                        "new_value": new_val,
+                        "old_value": old_val,
                     },
                 )
                 results[f"building_{building.id}"] = result
