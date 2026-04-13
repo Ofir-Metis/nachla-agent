@@ -44,11 +44,11 @@ class Taba(BaseModel):
     approval_date: str | None = Field(default=None, description='תאריך אישור התב"ע')
 
     # Plot details
-    plot_id: str = Field(..., description="מזהה מגרש, e.g. 'מגרש 68'")
-    plot_size_sqm: float = Field(..., gt=0, description='שטח מגרש במ"ר (e.g. 2500 for 2.5 dunam)')
+    plot_id: str = Field(default="", description="מזהה מגרש, e.g. 'מגרש 68'")
+    plot_size_sqm: float = Field(default=2500, gt=0, description='שטח מגרש במ"ר (e.g. 2500 for 2.5 dunam)')
 
     # Building rights
-    num_units_allowed: float = Field(..., ge=0, description="מספר יחידות דיור מותרות (e.g. 2.5)")
+    num_units_allowed: float = Field(default=2, ge=0, description="מספר יחידות דיור מותרות (e.g. 2.5)")
     unit_rights: list[TabaRights] = Field(default_factory=list, description="זכויות בנייה לכל יחידת דיור")
     # Default 55 is standard per most tabas; actual value comes from taba document
     attached_unit_sqm: float = Field(default=55, ge=0, description='שטח יחידה צמודת קיר במ"ר')
@@ -78,6 +78,18 @@ class Taba(BaseModel):
     @classmethod
     def validate_status(cls, v: str) -> str:
         allowed = {"approved", "in_process", "deposited"}
+        # Map Hebrew status values from LLM to English enum
+        hebrew_map = {
+            "בתוקף": "approved",
+            "מאושר": "approved",
+            "מאושרת": "approved",
+            "בתהליך": "in_process",
+            "בהליך אישור": "in_process",
+            "הופקדה": "deposited",
+            "הופקד": "deposited",
+        }
+        if v in hebrew_map:
+            return hebrew_map[v]
         if v not in allowed:
             raise ValueError(f"status must be one of {allowed}, got '{v}'")
         return v

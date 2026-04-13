@@ -1278,68 +1278,43 @@ class NachlaAgent:
         combined_text = "\n\n".join(all_text_parts)
         self._document_context = combined_text
 
-        # Step 1: Classify and validate each document
-        classification_prompt = (
-            "You are analyzing documents for an Israeli agricultural settlement (nachla) feasibility study.\n"
-            "For EACH document below, classify it and determine if it is relevant.\n\n"
-            "Expected document types for this process:\n"
-            "- מפת מדידה (survey map): shows buildings, their measurements, and plot boundaries\n"
-            "- היתר בנייה (building permit): official construction permit with permitted areas\n"
-            "- תב\"ע (zoning plan): planning document with allowed building rights\n"
-            "- נסח טאבו (land registry): ownership information\n"
-            "- שומת מקרקעין (appraisal): property valuation\n"
-            "- סיכום בדיקת התכנות (feasibility summary): existing analysis report\n\n"
-            "Documents to classify:\n"
-            + "\n".join(
-                f"- {s['filename']} (uploaded as: {s['file_type']}, "
-                f"text: {s['text_length']} chars, tables: {s['table_count']})\n"
-                f"  First 200 chars: {s['first_200_chars']}"
-                for s in file_summaries
-            )
-            + "\n\nFor each document, return:\n"
-            "- filename, detected_type (Hebrew), is_relevant (bool), confidence (high/medium/low), "
-            "note (Hebrew explanation if wrong type or not relevant)\n\n"
-            "Return JSON: {\"classifications\": [...], \"missing_documents\": [list of expected but missing document types in Hebrew]}"
-        )
-
+        # Single LLM call: classify documents AND extract data together
         doc_classifications: list[dict[str, Any]] = []
-        try:
-            class_result = await self.llm_client.analyze_document(
-                system=self.system_prompt,
-                document_text=combined_text[:500],  # Only need brief context for classification
-                document_tables=[],
-                extraction_prompt=classification_prompt,
-            )
-            doc_classifications = class_result.get("classifications", [])
-            missing = class_result.get("missing_documents", [])
-            if missing:
-                logger.info("Missing document types: %s", missing)
-        except Exception as exc:
-            logger.warning("Document classification failed (continuing with extraction): %s", exc)
 
-        # Step 2: Extract buildings and tabas
         extraction_prompt = (
-            "Extract all buildings visible in these documents.\n"
-            "For each building, identify:\n"
+            "You are analyzing documents for an Israeli agricultural settlement (nachla) feasibility study.\n\n"
+            "STEP 1 — CLASSIFY each document:\n"
+            "For each file section (marked with --- filename ---), determine:\n"
+            "- detected_type: מפת מדידה / היתר בנייה / תב\"ע / סיכום בדיקת התכנות / נסח טאבו / לא רלוונטי\n"
+            "- is_relevant: true if it contains building/planning data, false if unrelated\n"
+            "- confidence: high/medium/low\n"
+            "- note: Hebrew explanation if the file seems wrong or irrelevant\n\n"
+            "STEP 2 — EXTRACT buildings from relevant documents:\n"
+            "For each building found, return:\n"
             "- name (Hebrew description)\n"
-            "- building_type (residential/service/agricultural/plach/pergola/pool/"
+            "- building_type: residential/service/agricultural/plach/pergola/pool/"
             "basement_service/basement_residential/attic/ground_floor_open/"
-            "ground_floor_closed/temporary/shed_open/pre_1965)\n"
+            "ground_floor_closed/temporary/shed_open/pre_1965\n"
             "- main_area_sqm (numeric)\n"
-            "- service_area_sqm (numeric, 0 if none)\n"
-            "- pergola_area_sqm (numeric, 0 if none)\n"
-            "- basement_area_sqm (numeric, 0 if none)\n"
-            "- mamad_area_sqm (numeric, 0 if none)\n"
-            "- permit_year (year of building permit, null if no permit)\n"
-            "- permit_area_sqm (permitted area, null if no permit)\n"
-            "- status (compliant/deviation/no_permit/marked_demolition/building_line_violation)\n"
-            "- deviation_sqm (if status is deviation, the excess area)\n"
+            "- service_area_sqm (0 if none)\n"
+            "- pergola_area_sqm (0 if none)\n"
+            "- basement_area_sqm (0 if none)\n"
+            "- mamad_area_sqm (0 if none)\n"
+            "- permit_year (null if no permit)\n"
+            "- permit_area_sqm (null if no permit)\n"
+            "- status: compliant/deviation/no_permit/marked_demolition/building_line_violation\n"
+            "- deviation_sqm (if deviation)\n"
             "- construction_year (if identifiable)\n\n"
-            "Also extract taba (zoning plan) information if present:\n"
-            "- taba_number, taba_name, status, approval_date\n"
+            "STEP 3 — EXTRACT taba (zoning plan) info if present:\n"
+            "- taba_number, taba_name, status (approved/in_process/deposited), approval_date\n"
             "- plot_size_sqm, num_units_allowed\n"
             "- unit rights (main_area_sqm, service_area_sqm per unit)\n\n"
-            "Return JSON: {\"buildings\": [...], \"tabas\": [...]}"
+            "Return JSON:\n"
+            "{\n"
+            '  "classifications": [{filename, detected_type, is_relevant, confidence, note}, ...],\n'
+            '  "buildings": [...],\n'
+            '  "tabas": [...]\n'
+            "}"
         )
 
         try:
@@ -1351,7 +1326,10 @@ class NachlaAgent:
             )
         except Exception as exc:
             logger.error("LLM document analysis failed: %s", exc)
-            return [], []
+            return [], [], []
+
+        # Extract classifications from the combined result
+        doc_classifications = result.get("classifications", [])
 
         # Parse and validate buildings against Pydantic model
         buildings: list[Building] = []

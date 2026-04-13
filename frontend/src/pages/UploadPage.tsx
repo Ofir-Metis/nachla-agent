@@ -9,15 +9,19 @@ import FocusManager from "@/components/ui/FocusManager";
 
 type ExtractionPhase = "idle" | "uploading" | "analyzing" | "done" | "error";
 
-const PHASE_LABELS: Record<string, string> = {
-  uploading: "מעלה מסמכים...",
-  analyzing: "מנתח מסמכים באמצעות AI...",
-};
+function getPhaseLabel(phase: string, elapsed: number): string {
+  if (phase === "uploading") return "מעלה מסמכים...";
+  if (elapsed < 30) return "מנתח מסמכים באמצעות AI...";
+  if (elapsed < 60) return "מזהה מבנים ותב\"עות...";
+  if (elapsed < 90) return "מעבד נתונים שנמצאו...";
+  return "כמעט סיימנו...";
+}
 
-const PHASE_SUBTEXTS: Record<string, string> = {
-  uploading: "שולח את הקבצים לשרת",
-  analyzing: "מזהה מבנים ותב\"עות — התהליך עשוי לקחת עד דקה וחצי",
-};
+function getPhaseSubtext(phase: string, elapsed: number): string {
+  if (phase === "uploading") return "שולח את הקבצים לשרת";
+  if (elapsed < 60) return "התהליך עשוי לקחת עד שתי דקות";
+  return "עוד רגע מסיימים — אנא המתינו";
+}
 
 export default function UploadPage() {
   const navigate = useNavigate();
@@ -63,18 +67,28 @@ export default function UploadPage() {
       return;
     }
 
+    // Simulated progress for AI analysis phase (30%-90% over ~120 seconds)
+    let progressTimer: ReturnType<typeof setInterval> | null = null;
+
     try {
       const result = await extractDocuments(validFiles, (pct) => {
         setProgress(pct);
-        if (pct >= 30) setPhase("analyzing");
+        if (pct >= 30 && !progressTimer) {
+          setPhase("analyzing");
+          // Start gradual progress animation while AI works
+          progressTimer = setInterval(() => {
+            setProgress((prev) => (prev >= 90 ? 90 : prev + 0.5));
+          }, 1000);
+        }
       });
 
+      if (progressTimer) clearInterval(progressTimer);
+      setProgress(100);
       setPhase("done");
       setExtractedData(result.buildings, result.tabas, result.warnings);
-
-      // Navigate to validation page
       navigate("/validate");
     } catch (err) {
+      if (progressTimer) clearInterval(progressTimer);
       const message = err instanceof Error ? err.message : "שגיאה בניתוח המסמכים.";
       setError(message);
       setPhase("error");
@@ -119,10 +133,10 @@ export default function UploadPage() {
             </div>
 
             <p className="text-[1.1rem] font-semibold text-olive-800">
-              {PHASE_LABELS[phase] || "מעבד..."}
+              {getPhaseLabel(phase, elapsed)}
             </p>
             <p className="text-[0.85rem] text-soil-500 max-w-xs">
-              {PHASE_SUBTEXTS[phase]}
+              {getPhaseSubtext(phase, elapsed)}
             </p>
 
             {/* Progress bar */}
