@@ -149,6 +149,16 @@ class ResultsResponse(BaseModel):
     download_types: list[str] = []
 
 
+class DocumentClassification(BaseModel):
+    """AI classification result for a single uploaded document."""
+
+    filename: str = ""
+    detected_type: str = ""
+    is_relevant: bool = True
+    confidence: str = "medium"
+    note: str = ""
+
+
 class ExtractionResponse(BaseModel):
     """Response from document extraction (AI analysis of uploaded files)."""
 
@@ -157,6 +167,7 @@ class ExtractionResponse(BaseModel):
     building_count: int = 0
     taba_count: int = 0
     warnings: list[str] = Field(default_factory=list)
+    document_classifications: list[DocumentClassification] = Field(default_factory=list)
 
 
 # --- Helper Functions ---
@@ -271,13 +282,41 @@ async def extract_documents(request: Request, files: list[UploadFile] | None = N
             agent.attach_llm(llm_client)
             agent.system_prompt = build_system_prompt()
 
-        buildings, tabas = await agent.analyze_uploaded_documents(file_paths)
+        buildings, tabas, doc_classifications = await agent.analyze_uploaded_documents(file_paths)
 
         building_dicts = [b.model_dump() for b in buildings]
         taba_dicts = [t.model_dump() for t in tabas]
 
+        # Add classification-based warnings
+        for cls in doc_classifications:
+            if not cls.get("is_relevant", True):
+                fname = cls.get("filename", "")
+                note = cls.get("note", "")
+                warnings.append(f"הקובץ \"{fname}\" אינו רלוונטי לבדיקת התכנות. {note}")
+            elif cls.get("confidence") == "low":
+                fname = cls.get("filename", "")
+                detected = cls.get("detected_type", "")
+                warnings.append(f"הקובץ \"{fname}\" זוהה כ-{detected} ברמת ודאות נמוכה. אנא ודאו שהעלתם את הקובץ הנכון.")
+
+        missing_docs = []
+        for cls in doc_classifications:
+            if isinstance(cls, dict):
+                pass  # classifications are per-file
+        # Check if key document types are missing
+        detected_types = {c.get("detected_type", "") for c in doc_classifications}
+        if not any("מדידה" in t or "survey" in t.lower() for t in detected_types if t):
+            warnings.append("לא זוהתה מפת מדידה במסמכים שהועלו. מפת מדידה נדרשת לזיהוי מבנים מדויק.")
+
         if not buildings:
             warnings.append("לא זוהו מבנים במסמכים שהועלו. ניתן להזין מבנים ידנית.")
+
+        # Build classification objects
+        classifications = []
+        for cls in doc_classifications:
+            try:
+                classifications.append(DocumentClassification(**cls))
+            except Exception:
+                pass
 
         return ExtractionResponse(
             buildings=building_dicts,
@@ -285,6 +324,7 @@ async def extract_documents(request: Request, files: list[UploadFile] | None = N
             building_count=len(buildings),
             taba_count=len(tabas),
             warnings=warnings,
+            document_classifications=classifications,
         )
 
     except Exception as exc:

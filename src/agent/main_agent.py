@@ -634,7 +634,7 @@ class NachlaAgent:
         # Try LLM document analysis if no buildings provided
         if not nachla.buildings and self.llm_client and uploaded_files:
             logger.info("No buildings in intake data, running LLM document analysis")
-            extracted_buildings, extracted_tabas = await self.analyze_uploaded_documents(uploaded_files)
+            extracted_buildings, extracted_tabas, _ = await self.analyze_uploaded_documents(uploaded_files)
             if extracted_buildings:
                 nachla.buildings = extracted_buildings
             if extracted_tabas and not nachla.tabas:
@@ -1221,30 +1221,45 @@ class NachlaAgent:
     async def analyze_uploaded_documents(
         self,
         file_paths: dict[str, str],
-    ) -> tuple[list[Building], list[Taba]]:
-        """Parse uploaded PDFs and extract building/taba data using Claude.
+    ) -> tuple[list[Building], list[Taba], list[dict[str, Any]]]:
+        """Parse uploaded PDFs, classify them, and extract building/taba data using Claude.
 
         Args:
             file_paths: Dict mapping file type ("survey_map", "building_permits", etc.) to file path.
 
         Returns:
-            Tuple of (buildings, tabas) extracted from documents.
+            Tuple of (buildings, tabas, document_classifications).
+            document_classifications: list of dicts with:
+              - filename: str
+              - detected_type: str (e.g. "מפת מדידה", "היתר בנייה", "סיכום בדיקת התכנות", "לא רלוונטי")
+              - is_relevant: bool
+              - confidence: str ("high", "medium", "low")
+              - note: str (Hebrew explanation)
         """
         if not self.llm_client:
             logger.warning("No LLM client attached, cannot analyze documents")
-            return [], []
+            return [], [], []
 
         from documents.pdf_parser import PDFParser
 
         parser = PDFParser()
         all_text_parts: list[str] = []
         all_tables: list[list[list[str]]] = []
+        file_summaries: list[dict[str, str]] = []
 
         for file_type, fpath in file_paths.items():
             try:
                 parsed = parser.parse(fpath)
-                all_text_parts.append(f"--- {file_type} ---\n{parsed.text}")
+                fname = fpath.rsplit("/", 1)[-1] if "/" in fpath else fpath.rsplit("\\", 1)[-1]
+                all_text_parts.append(f"--- {file_type}: {fname} ---\n{parsed.text}")
                 all_tables.extend(parsed.tables)
+                file_summaries.append({
+                    "filename": fname,
+                    "file_type": file_type,
+                    "text_length": str(len(parsed.text)),
+                    "table_count": str(len(parsed.tables)),
+                    "first_200_chars": parsed.text[:200] if parsed.text else "",
+                })
                 self.audit_logger.log_data_source(
                     source_type=file_type,
                     source_name=fpath,
@@ -1258,11 +1273,51 @@ class NachlaAgent:
                 logger.error("Failed to parse %s (%s): %s", file_type, fpath, exc)
 
         if not all_text_parts:
-            return [], []
+            return [], [], []
 
         combined_text = "\n\n".join(all_text_parts)
         self._document_context = combined_text
 
+        # Step 1: Classify and validate each document
+        classification_prompt = (
+            "You are analyzing documents for an Israeli agricultural settlement (nachla) feasibility study.\n"
+            "For EACH document below, classify it and determine if it is relevant.\n\n"
+            "Expected document types for this process:\n"
+            "- מפת מדידה (survey map): shows buildings, their measurements, and plot boundaries\n"
+            "- היתר בנייה (building permit): official construction permit with permitted areas\n"
+            "- תב\"ע (zoning plan): planning document with allowed building rights\n"
+            "- נסח טאבו (land registry): ownership information\n"
+            "- שומת מקרקעין (appraisal): property valuation\n"
+            "- סיכום בדיקת התכנות (feasibility summary): existing analysis report\n\n"
+            "Documents to classify:\n"
+            + "\n".join(
+                f"- {s['filename']} (uploaded as: {s['file_type']}, "
+                f"text: {s['text_length']} chars, tables: {s['table_count']})\n"
+                f"  First 200 chars: {s['first_200_chars']}"
+                for s in file_summaries
+            )
+            + "\n\nFor each document, return:\n"
+            "- filename, detected_type (Hebrew), is_relevant (bool), confidence (high/medium/low), "
+            "note (Hebrew explanation if wrong type or not relevant)\n\n"
+            "Return JSON: {\"classifications\": [...], \"missing_documents\": [list of expected but missing document types in Hebrew]}"
+        )
+
+        doc_classifications: list[dict[str, Any]] = []
+        try:
+            class_result = await self.llm_client.analyze_document(
+                system=self.system_prompt,
+                document_text=combined_text[:500],  # Only need brief context for classification
+                document_tables=[],
+                extraction_prompt=classification_prompt,
+            )
+            doc_classifications = class_result.get("classifications", [])
+            missing = class_result.get("missing_documents", [])
+            if missing:
+                logger.info("Missing document types: %s", missing)
+        except Exception as exc:
+            logger.warning("Document classification failed (continuing with extraction): %s", exc)
+
+        # Step 2: Extract buildings and tabas
         extraction_prompt = (
             "Extract all buildings visible in these documents.\n"
             "For each building, identify:\n"
@@ -1355,8 +1410,9 @@ class NachlaAgent:
             except Exception as exc:
                 logger.warning("Failed to parse taba from LLM: %s", exc)
 
-        logger.info("Document analysis extracted %d buildings, %d tabas", len(buildings), len(tabas))
-        return buildings, tabas
+        logger.info("Document analysis extracted %d buildings, %d tabas, %d classifications",
+                    len(buildings), len(tabas), len(doc_classifications))
+        return buildings, tabas, doc_classifications
 
     async def classify_buildings_with_llm(
         self,

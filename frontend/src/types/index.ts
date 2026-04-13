@@ -62,12 +62,21 @@ export interface Building {
   user_confirmed: boolean;
 }
 
+export interface DocumentClassification {
+  filename: string;
+  detected_type: string;
+  is_relevant: boolean;
+  confidence: string;
+  note: string;
+}
+
 export interface ExtractionResponse {
   buildings: Building[];
   tabas: Record<string, unknown>[];
   building_count: number;
   taba_count: number;
   warnings: string[];
+  document_classifications: DocumentClassification[];
 }
 
 export type JobState =
