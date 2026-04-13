@@ -381,6 +381,11 @@ class JobQueue:
                     except Exception as exc:
                         logger.warning("Failed to parse confirmed building: %s", exc)
                 agent.workflow.confirm_classifications()
+                # Mark classification and checkpoint phases as completed
+                from agent.workflow import WorkflowPhase
+                for phase in (WorkflowPhase.BUILDING_MAPPING, WorkflowPhase.CLASSIFICATION, WorkflowPhase.CHECKPOINT):
+                    if phase not in agent.workflow.completed_phases:
+                        agent.workflow.completed_phases.append(phase)
             else:
                 # No buildings found — mark classification/checkpoint as done to unblock workflow
                 agent.workflow.classifications_confirmed = True

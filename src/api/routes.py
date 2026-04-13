@@ -249,7 +249,13 @@ async def upload_files(job_id: str, request: Request, files: list[UploadFile] | 
             detail="לא התקבלו קבצים. אנא העלו לפחות קובץ אחד.",
         )
 
-    validated_files: list[str] = []
+    from pathlib import Path as _Path
+
+    # Create upload directory for this job
+    upload_dir = _Path(os.getenv("OUTPUT_DIRECTORY", "output")) / "uploads" / job_id
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    saved_paths: list[str] = []
 
     for file in files:
         # Validate extension
@@ -273,18 +279,22 @@ async def upload_files(job_id: str, request: Request, files: list[UploadFile] | 
                 ),
             )
 
-        # Reset file position for downstream processing
-        await file.seek(0)
-        validated_files.append(file.filename or "unknown")
+        # Save file to disk
+        safe_name = _Path(file.filename or "unknown").name  # strip path components
+        dest = upload_dir / safe_name
+        dest.write_bytes(content)
+        saved_paths.append(str(dest))
+        logger.info("Saved upload: %s (%d bytes)", dest, len(content))
 
-    # Store file references in the job
-    await queue.add_files(job_id, validated_files)
+    # Store file paths (not just names) in the job
+    await queue.add_files(job_id, saved_paths)
 
+    file_names = [_Path(p).name for p in saved_paths]
     return FileUploadResponse(
         job_id=job_id,
-        files_received=len(validated_files),
-        file_names=validated_files,
-        message=f"התקבלו {len(validated_files)} קבצים בהצלחה.",
+        files_received=len(saved_paths),
+        file_names=file_names,
+        message=f"התקבלו {len(saved_paths)} קבצים בהצלחה.",
     )
 
 
