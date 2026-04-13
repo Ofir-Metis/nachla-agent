@@ -19,7 +19,7 @@ export default function AppHeader() {
         </svg>
       </div>
       <div className="min-w-0">
-        <div className="font-heading text-[1.15rem] sm:text-[1.35rem] font-bold text-olive-800 tracking-tight truncate">
+        <div className="font-heading text-[1rem] sm:text-[1.35rem] font-bold text-olive-800 tracking-tight truncate">
           בדיקת התכנות נחלות
         </div>
         <div className="text-[0.78rem] sm:text-[0.82rem] text-soil-500 mt-px hidden sm:block">
