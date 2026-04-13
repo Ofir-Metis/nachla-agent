@@ -344,34 +344,59 @@ class JobQueue:
             if monday_client and monday_item_id:
                 asyncio.create_task(monday_client.update_status(monday_item_id, 'ניתוח תב"ע הושלם'))
 
-            # --- Phase 3: Building mapping (uses LLM for document analysis) ---
+            # --- Phase 3: Building mapping ---
             job.phase = "building_mapping"
             job.progress = 30
+            from agent.workflow import WorkflowPhase
 
-            # Wait briefly for file uploads to arrive (uploaded async after job creation)
-            if not job.uploaded_files:
-                for _ in range(10):  # Wait up to 10 seconds
-                    await asyncio.sleep(1)
-                    if job.uploaded_files:
-                        break
+            # Check if buildings were pre-extracted (user already validated at upload time)
+            pre_buildings = job.intake_data.get("pre_extracted_buildings")
+            pre_tabas = job.intake_data.get("pre_extracted_tabas")
 
-            # Build uploaded file paths dict
-            uploaded_files: dict[str, str] = {}
-            for fpath in job.uploaded_files:
-                if "survey" in fpath.lower() or "מדידה" in fpath:
-                    uploaded_files["survey_map"] = fpath
-                elif "permit" in fpath.lower() or "היתר" in fpath:
-                    uploaded_files["building_permits"] = fpath
-                else:
-                    uploaded_files[fpath] = fpath
-            logger.info("Job %s: %d uploaded files available", job_id, len(uploaded_files))
+            if pre_buildings:
+                # Use pre-extracted buildings — skip LLM analysis
+                logger.info("Job %s: Using %d pre-extracted buildings", job_id, len(pre_buildings))
+                buildings = []
+                for bd in pre_buildings:
+                    try:
+                        buildings.append(Building(**bd))
+                    except Exception as exc:
+                        logger.warning("Failed to parse pre-extracted building: %s", exc)
+                nachla.buildings = buildings
+                if pre_tabas:
+                    from models.taba import Taba
+                    for td in pre_tabas:
+                        try:
+                            tabas.append(Taba(**td))
+                        except Exception:
+                            pass
+                    nachla.tabas = tabas
+            else:
+                # No pre-extracted data — run LLM document analysis
+                # Wait briefly for file uploads to arrive (uploaded async after job creation)
+                if not job.uploaded_files:
+                    for _ in range(10):
+                        await asyncio.sleep(1)
+                        if job.uploaded_files:
+                            break
 
-            buildings = await agent._run_building_mapping(nachla, uploaded_files)
+                uploaded_files: dict[str, str] = {}
+                for fpath in job.uploaded_files:
+                    if "survey" in fpath.lower() or "מדידה" in fpath:
+                        uploaded_files["survey_map"] = fpath
+                    elif "permit" in fpath.lower() or "היתר" in fpath:
+                        uploaded_files["building_permits"] = fpath
+                    else:
+                        uploaded_files[fpath] = fpath
+                logger.info("Job %s: %d uploaded files available", job_id, len(uploaded_files))
+                buildings = await agent._run_building_mapping(nachla, uploaded_files)
+
             if monday_client and monday_item_id:
                 asyncio.create_task(monday_client.update_status(monday_item_id, "מיפוי מבנים הושלם"))
 
             # --- Phase 3.4: Classification checkpoint ---
-            if buildings:
+            if buildings and not pre_buildings:
+                # Only pause for checkpoint if buildings came from LLM (not pre-validated)
                 job.buildings = [b.model_dump() for b in buildings]
                 confirmed_dicts = await self.pause_for_checkpoint(job_id, job.buildings)
                 buildings = []
@@ -380,20 +405,15 @@ class JobQueue:
                         buildings.append(Building(**bd))
                     except Exception as exc:
                         logger.warning("Failed to parse confirmed building: %s", exc)
-                agent.workflow.confirm_classifications()
-                # Mark classification and checkpoint phases as completed
-                from agent.workflow import WorkflowPhase
-                for phase in (WorkflowPhase.BUILDING_MAPPING, WorkflowPhase.CLASSIFICATION, WorkflowPhase.CHECKPOINT):
-                    if phase not in agent.workflow.completed_phases:
-                        agent.workflow.completed_phases.append(phase)
-            else:
-                # No buildings found — mark classification/checkpoint as done to unblock workflow
-                agent.workflow.classifications_confirmed = True
-                from agent.workflow import WorkflowPhase
-                for phase in (WorkflowPhase.CLASSIFICATION, WorkflowPhase.CHECKPOINT):
-                    if phase not in agent.workflow.completed_phases:
-                        agent.workflow.completed_phases.append(phase)
-                logger.warning("Job %s: No buildings found, skipping checkpoint", job_id)
+
+            # Mark phases as completed
+            agent.workflow.confirm_classifications()
+            for phase in (WorkflowPhase.BUILDING_MAPPING, WorkflowPhase.CLASSIFICATION, WorkflowPhase.CHECKPOINT):
+                if phase not in agent.workflow.completed_phases:
+                    agent.workflow.completed_phases.append(phase)
+
+            if not buildings:
+                logger.warning("Job %s: No buildings to process", job_id)
 
             # --- Phases 4-11: Calculations ---
             job.phase = "calculations"

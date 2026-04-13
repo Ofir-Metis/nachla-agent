@@ -1,29 +1,90 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useWizardContext } from "@/context/WizardContext";
+import { extractDocuments } from "@/lib/api";
 import UploadGrid from "@/components/upload/UploadGrid";
 import OptionalSection from "@/components/upload/OptionalSection";
 import FormNav from "@/components/ui/FormNav";
 import FocusManager from "@/components/ui/FocusManager";
 
+type ExtractionPhase = "idle" | "uploading" | "analyzing" | "done" | "error";
+
+const PHASE_LABELS: Record<string, string> = {
+  uploading: "מעלה מסמכים...",
+  analyzing: "מנתח מסמכים באמצעות AI...",
+};
+
+const PHASE_SUBTEXTS: Record<string, string> = {
+  uploading: "שולח את הקבצים לשרת",
+  analyzing: "מזהה מבנים ותב\"עות — התהליך עשוי לקחת עד דקה וחצי",
+};
+
 export default function UploadPage() {
   const navigate = useNavigate();
-  const { formData, files, setFile } = useWizardContext();
+  const { formData, files, setFile, setExtractedData } = useWizardContext();
   const [permitOptOut, setPermitOptOut] = useState(false);
+  const [phase, setPhase] = useState<ExtractionPhase>("idle");
+  const [progress, setProgress] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
-  // Route guard: redirect to intake if no formData has been filled
+  // Route guard
   useEffect(() => {
     if (!formData.owner_name && !formData.moshav_name) {
       navigate("/intake", { replace: true });
     }
   }, [formData, navigate]);
 
+  // Elapsed timer during extraction
+  useEffect(() => {
+    if (phase !== "uploading" && phase !== "analyzing") return;
+    const interval = setInterval(() => setElapsed((e) => e + 1), 1000);
+    return () => clearInterval(interval);
+  }, [phase]);
+
   const handleFileChange = (id: string, file: File | null) => {
     setFile(id, file);
   };
 
+  const handleExtract = useCallback(async () => {
+    setError(null);
+    setPhase("uploading");
+    setProgress(0);
+    setElapsed(0);
+
+    const validFiles: Record<string, File> = {};
+    for (const [key, file] of Object.entries(files)) {
+      if (file) validFiles[key] = file;
+    }
+
+    if (Object.keys(validFiles).length === 0) {
+      setError("לא נבחרו קבצים לניתוח.");
+      setPhase("error");
+      return;
+    }
+
+    try {
+      const result = await extractDocuments(validFiles, (pct) => {
+        setProgress(pct);
+        if (pct >= 30) setPhase("analyzing");
+      });
+
+      setPhase("done");
+      setExtractedData(result.buildings, result.tabas, result.warnings);
+
+      // Navigate to validation page
+      navigate("/validate");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "שגיאה בניתוח המסמכים.";
+      setError(message);
+      setPhase("error");
+    }
+  }, [files, setExtractedData, navigate]);
+
   const requiredMet =
     permitOptOut || (!!files.survey_map && !!files.building_permits);
+
+  const isExtracting = phase === "uploading" || phase === "analyzing";
 
   return (
     <FocusManager focusKey="upload">
@@ -45,8 +106,57 @@ export default function UploadPage() {
           העלאת מסמכים
         </h1>
         <p className="text-[0.9rem] text-soil-600 mb-7 leading-relaxed">
-          העלו את המסמכים הנדרשים לצורך הבדיקה
+          העלו את המסמכים הנדרשים — המערכת תנתח אותם ותזהה את המבנים
         </p>
+
+        {/* Extraction overlay */}
+        {isExtracting && (
+          <div className="absolute inset-0 bg-cream/95 z-30 flex flex-col items-center justify-center gap-4 p-6 text-center">
+            {/* Animated spinner */}
+            <div className="relative w-16 h-16">
+              <div className="absolute inset-0 border-4 border-olive-200 rounded-full" />
+              <div className="absolute inset-0 border-4 border-olive-600 border-t-transparent rounded-full animate-spin" />
+            </div>
+
+            <p className="text-[1.1rem] font-semibold text-olive-800">
+              {PHASE_LABELS[phase] || "מעבד..."}
+            </p>
+            <p className="text-[0.85rem] text-soil-500 max-w-xs">
+              {PHASE_SUBTEXTS[phase]}
+            </p>
+
+            {/* Progress bar */}
+            {progress > 0 && progress < 100 && (
+              <div className="w-48 h-2 bg-olive-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-olive-600 rounded-full transition-all duration-300"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+            )}
+
+            {elapsed > 15 && (
+              <p className="text-[0.8rem] text-soil-400 mt-2">
+                {elapsed} שניות...
+              </p>
+            )}
+
+            <button
+              type="button"
+              onClick={() => { setPhase("idle"); setProgress(0); }}
+              className="mt-4 text-[0.85rem] text-soil-500 hover:text-error cursor-pointer bg-transparent border-none underline"
+            >
+              ביטול
+            </button>
+          </div>
+        )}
+
+        {/* Error banner */}
+        {error && (
+          <div role="alert" className="mb-5 p-3 bg-error/10 border border-error/30 rounded-[--radius-sm] text-error text-[0.85rem] animate-[alertIn_0.3s_ease-out]">
+            {error}
+          </div>
+        )}
 
         {/* Required uploads */}
         <UploadGrid files={files} onFileChange={handleFileChange} />
@@ -70,11 +180,11 @@ export default function UploadPage() {
         {/* Navigation */}
         <FormNav
           onBack={() => navigate("/intake")}
-          onNext={() => navigate("/confirm")}
+          onNext={handleExtract}
           backLabel="חזרה לטופס"
-          nextLabel="בדיקה והמשך"
+          nextLabel="ניתוח מסמכים"
           showBack
-          nextDisabled={!requiredMet}
+          nextDisabled={!requiredMet || isExtracting}
         />
       </div>
     </div>

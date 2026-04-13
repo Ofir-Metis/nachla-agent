@@ -62,6 +62,14 @@ export interface Building {
   user_confirmed: boolean;
 }
 
+export interface ExtractionResponse {
+  buildings: Building[];
+  tabas: Record<string, unknown>[];
+  building_count: number;
+  taba_count: number;
+  warnings: string[];
+}
+
 export type JobState =
   | "pending"
   | "running"

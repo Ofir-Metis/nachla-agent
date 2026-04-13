@@ -10,7 +10,7 @@ import type { IntakeData } from "@/types";
 
 export default function ConfirmPage() {
   const navigate = useNavigate();
-  const { formData, files, setJobId, clearDraft } = useWizardContext();
+  const { formData, files, extractedBuildings, extractedTabas, setJobId, clearDraft } = useWizardContext();
 
   const isOnline = useOnlineStatus();
   const [submitting, setSubmitting] = useState(false);
@@ -42,9 +42,19 @@ export default function ConfirmPage() {
     try {
       setSubmitting(true);
 
-      // 1. Submit intake data
+      // 1. Submit intake data (include pre-extracted buildings if available)
       setSubmitPhase("data");
-      const response = await submitIntake(parsed.data as IntakeData);
+      const intakePayload: Record<string, unknown> = { ...parsed.data };
+      if (extractedBuildings.length > 0) {
+        intakePayload.pre_extracted_buildings = extractedBuildings.map((b) => ({
+          ...b,
+          user_confirmed: true,
+        }));
+      }
+      if (extractedTabas.length > 0) {
+        intakePayload.pre_extracted_tabas = extractedTabas;
+      }
+      const response = await submitIntake(intakePayload as unknown as IntakeData);
       const jobId = response.job_id;
 
       // 2. Upload files (only non-null ones)
@@ -109,6 +119,32 @@ export default function ConfirmPage() {
         )}
 
         <ConfirmGrid formData={formData} fileCount={fileCount} />
+
+        {/* Extracted buildings summary */}
+        {extractedBuildings.length > 0 && (
+          <div className="mt-6 p-4 bg-olive-50/50 border border-olive-200 rounded-[--radius-md]">
+            <h3 className="text-[0.95rem] font-semibold text-olive-800 mb-2">
+              מבנים שזוהו מהמסמכים ({extractedBuildings.length})
+            </h3>
+            <ul className="space-y-1">
+              {extractedBuildings.map((b) => (
+                <li key={b.id} className="text-[0.85rem] text-soil-600 flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-olive-400 shrink-0" />
+                  <span>{b.name || `מבנה ${b.id}`}</span>
+                  <span className="text-soil-400">—</span>
+                  <span>{b.main_area_sqm} מ"ר</span>
+                </li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              onClick={() => navigate("/validate")}
+              className="mt-3 text-[0.82rem] text-olive-700 hover:text-olive-900 underline cursor-pointer bg-transparent border-none"
+            >
+              עריכת סיווג מבנים
+            </button>
+          </div>
+        )}
 
         {/* Navigation */}
         <div className="flex flex-col-reverse sm:flex-row gap-3 mt-6 sm:mt-8 pt-5 sm:pt-6 border-t border-[#D8D0C4] max-sm:sticky max-sm:bottom-0 max-sm:bg-[rgba(255,253,248,0.95)] max-sm:backdrop-blur-sm max-sm:z-20 max-sm:pb-3 max-sm:-mx-5 max-sm:px-5">

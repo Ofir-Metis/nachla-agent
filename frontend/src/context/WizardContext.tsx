@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { IntakeData } from "@/types";
+import type { IntakeData, Building } from "@/types";
 
 /* ────────────────────────────────────────────
    Types
@@ -28,6 +28,12 @@ interface WizardState {
   currentScreen: WizardScreen;
   /** True when we hydrated a draft from localStorage on mount */
   hasDraft: boolean;
+  /** Buildings extracted from uploaded documents by AI */
+  extractedBuildings: Building[];
+  /** Tabas extracted from uploaded documents by AI */
+  extractedTabas: Record<string, unknown>[];
+  /** Warnings from extraction */
+  extractionWarnings: string[];
 }
 
 interface WizardActions {
@@ -36,6 +42,8 @@ interface WizardActions {
   setFile: (slotId: string, file: File | null) => void;
   setJobId: (id: string) => void;
   setCurrentScreen: (screen: WizardScreen) => void;
+  setExtractedData: (buildings: Building[], tabas: Record<string, unknown>[], warnings: string[]) => void;
+  updateExtractedBuilding: (id: number, updates: Partial<Building>) => void;
   reset: () => void;
   clearDraft: () => void;
   dismissDraft: () => void;
@@ -103,6 +111,9 @@ export function WizardProvider({ children }: { children: ReactNode }) {
   const [jobId, setJobIdState] = useState<string | null>(null);
   const [currentScreen, setCurrentScreen] = useState<WizardScreen>("intake");
   const [hasDraft, setHasDraft] = useState<boolean>(draft !== null);
+  const [extractedBuildings, setExtractedBuildings] = useState<Building[]>([]);
+  const [extractedTabas, setExtractedTabas] = useState<Record<string, unknown>[]>([]);
+  const [extractionWarnings, setExtractionWarnings] = useState<string[]>([]);
 
   // Debounced localStorage persistence
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -144,12 +155,27 @@ export function WizardProvider({ children }: { children: ReactNode }) {
     setJobIdState(id);
   }, []);
 
+  const setExtractedData = useCallback((buildings: Building[], tabas: Record<string, unknown>[], warnings: string[]) => {
+    setExtractedBuildings(buildings);
+    setExtractedTabas(tabas);
+    setExtractionWarnings(warnings);
+  }, []);
+
+  const updateExtractedBuilding = useCallback((id: number, updates: Partial<Building>) => {
+    setExtractedBuildings((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, ...updates } : b))
+    );
+  }, []);
+
   const reset = useCallback(() => {
     setFormData({ ...INITIAL_FORM_DATA });
     setFiles({});
     setJobIdState(null);
     setCurrentScreen("intake");
     setHasDraft(false);
+    setExtractedBuildings([]);
+    setExtractedTabas([]);
+    setExtractionWarnings([]);
     try {
       localStorage.removeItem(STORAGE_KEY);
     } catch {
@@ -177,11 +203,16 @@ export function WizardProvider({ children }: { children: ReactNode }) {
         jobId,
         currentScreen,
         hasDraft,
+        extractedBuildings,
+        extractedTabas,
+        extractionWarnings,
         updateFormData,
         updateField,
         setFile,
         setJobId,
         setCurrentScreen,
+        setExtractedData,
+        updateExtractedBuilding,
         reset,
         clearDraft,
         dismissDraft,

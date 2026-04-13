@@ -1,4 +1,4 @@
-import type { IntakeData, JobStatusResponse, JobCreateResponse, Building, CostSummary, JobSummary } from "@/types";
+import type { IntakeData, JobStatusResponse, JobCreateResponse, Building, CostSummary, JobSummary, ExtractionResponse } from "@/types";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -107,6 +107,50 @@ export function uploadFilesWithProgress(
 
     xhr.addEventListener("error", () => {
       reject(new ApiError("שגיאה בהעלאת הקבצים. אנא נסו שנית.", 0));
+    });
+
+    xhr.send(formData);
+  });
+}
+
+/** POST /api/v1/extract — send files to AI for building/taba extraction */
+export function extractDocuments(
+  files: Record<string, File>,
+  onProgress: (percent: number) => void,
+): Promise<ExtractionResponse> {
+  return new Promise((resolve, reject) => {
+    const formData = new FormData();
+    for (const [_key, file] of Object.entries(files)) {
+      if (file) formData.append("files", file);
+    }
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${BASE_URL}/api/v1/extract`);
+
+    xhr.upload.addEventListener("progress", (e) => {
+      if (e.lengthComputable) {
+        // Upload is ~30% of total time, analysis is ~70%
+        onProgress(Math.round((e.loaded / e.total) * 30));
+      }
+    });
+
+    xhr.addEventListener("load", () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText) as ExtractionResponse;
+          resolve(data);
+        } catch {
+          reject(new ApiError("שגיאה בעיבוד תשובת השרת.", xhr.status));
+        }
+      } else if (xhr.status === 503) {
+        reject(new ApiError("שירות AI אינו זמין כרגע. אנא נסו מאוחר יותר.", xhr.status));
+      } else {
+        reject(new ApiError("שגיאה בניתוח המסמכים. אנא נסו שנית.", xhr.status));
+      }
+    });
+
+    xhr.addEventListener("error", () => {
+      reject(new ApiError("שגיאת רשת בניתוח המסמכים.", 0));
     });
 
     xhr.send(formData);

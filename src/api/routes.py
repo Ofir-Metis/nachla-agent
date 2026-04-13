@@ -50,6 +50,10 @@ class IntakeRequest(BaseModel):
     future_plans: str | None = Field(default=None, description="תוכניות עתידיות")
     monday_item_id: str | None = Field(default=None, description="מזהה פריט ב-Monday.com")
 
+    # Pre-extracted data from /api/v1/extract (validated by user before submission)
+    pre_extracted_buildings: list[dict[str, Any]] | None = Field(default=None, description="מבנים שזוהו מהמסמכים ואושרו ע\"י המשתמש")
+    pre_extracted_tabas: list[dict[str, Any]] | None = Field(default=None, description='תב"עות שזוהו מהמסמכים')
+
 
 class JobStatusResponse(BaseModel):
     """Job status response."""
@@ -145,6 +149,16 @@ class ResultsResponse(BaseModel):
     download_types: list[str] = []
 
 
+class ExtractionResponse(BaseModel):
+    """Response from document extraction (AI analysis of uploaded files)."""
+
+    buildings: list[dict[str, Any]] = Field(default_factory=list)
+    tabas: list[dict[str, Any]] = Field(default_factory=list)
+    building_count: int = 0
+    taba_count: int = 0
+    warnings: list[str] = Field(default_factory=list)
+
+
 # --- Helper Functions ---
 
 
@@ -158,6 +172,18 @@ def _get_job_queue(request: Request) -> Any:
         The JobQueue instance.
     """
     return request.app.state.job_queue
+
+
+def _classify_file_type(filename: str) -> str:
+    """Classify an uploaded file into a document type based on its name."""
+    name = filename.lower()
+    if "survey" in name or "מדידה" in name or "מפת" in name:
+        return "survey_map"
+    if "permit" in name or "היתר" in name:
+        return "building_permits"
+    if "taba" in name or "תבע" in name or 'תב"ע' in name:
+        return "taba_document"
+    return "other_document"
 
 
 def _validate_file_extension(filename: str) -> bool:
@@ -176,6 +202,97 @@ def _validate_file_extension(filename: str) -> bool:
 
 
 # --- Endpoints ---
+
+
+@router.post("/extract", response_model=ExtractionResponse)
+async def extract_documents(request: Request, files: list[UploadFile] | None = None) -> ExtractionResponse:
+    """Extract buildings and taba data from uploaded documents using AI.
+
+    Standalone endpoint — does NOT create a job. Used during the upload
+    step so users can validate extraction results before submitting.
+
+    Args:
+        request: FastAPI request.
+        files: Uploaded PDF/image files.
+
+    Returns:
+        Extracted buildings and tabas.
+    """
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        raise HTTPException(
+            status_code=503,
+            detail="שירות AI אינו זמין כרגע — חסר מפתח API.",
+        )
+
+    if not files:
+        raise HTTPException(status_code=400, detail="לא התקבלו קבצים לניתוח.")
+
+    import uuid
+    from pathlib import Path as _Path
+
+    # Save files to temp directory
+    extract_id = str(uuid.uuid4())[:8]
+    upload_dir = _Path(os.getenv("OUTPUT_DIRECTORY", "output")) / "uploads" / f"extract-{extract_id}"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    file_paths: dict[str, str] = {}
+    warnings: list[str] = []
+
+    for file in files:
+        if not _validate_file_extension(file.filename or ""):
+            raise HTTPException(
+                status_code=400,
+                detail=f'סוג הקובץ "{file.filename}" אינו נתמך.',
+            )
+        content = await file.read()
+        if len(content) > MAX_FILE_SIZE_BYTES:
+            raise HTTPException(status_code=400, detail=f'הקובץ "{file.filename}" גדול מדי.')
+
+        safe_name = _Path(file.filename or "unknown").name
+        dest = upload_dir / safe_name
+        dest.write_bytes(content)
+
+        file_type = _classify_file_type(safe_name)
+        file_paths[file_type] = str(dest)
+        logger.info("Extract: saved %s as %s (%d bytes)", safe_name, file_type, len(content))
+
+    # Run AI extraction
+    try:
+        from config.settings import get_settings
+        from agent.main_agent import NachlaAgent
+        from agent.system_prompt import build_system_prompt
+
+        settings = get_settings()
+        agent = NachlaAgent(settings)
+
+        if settings.anthropic_api_key:
+            from agent.llm_client import LLMClient
+            llm_client = LLMClient(settings, audit_logger=agent.audit_logger)
+            agent.attach_llm(llm_client)
+            agent.system_prompt = build_system_prompt()
+
+        buildings, tabas = await agent.analyze_uploaded_documents(file_paths)
+
+        building_dicts = [b.model_dump() for b in buildings]
+        taba_dicts = [t.model_dump() for t in tabas]
+
+        if not buildings:
+            warnings.append("לא זוהו מבנים במסמכים שהועלו. ניתן להזין מבנים ידנית.")
+
+        return ExtractionResponse(
+            buildings=building_dicts,
+            tabas=taba_dicts,
+            building_count=len(buildings),
+            taba_count=len(tabas),
+            warnings=warnings,
+        )
+
+    except Exception as exc:
+        logger.error("Document extraction failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="שגיאה בניתוח המסמכים. אנא נסו שנית.",
+        )
 
 
 @router.get("/jobs")
