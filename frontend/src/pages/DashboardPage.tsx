@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import type { JobSummary } from "@/types";
 import { fetchJobs, deleteJob } from "@/lib/api";
+import { useWizardContext } from "@/context/WizardContext";
 import FocusManager from "@/components/ui/FocusManager";
 import JobSection from "@/components/dashboard/JobSection";
 import DeleteBar from "@/components/dashboard/DeleteBar";
@@ -27,6 +28,7 @@ function getPhaseRoute(job: JobSummary): string {
 
 export default function DashboardPage() {
   const navigate = useNavigate();
+  const { reset } = useWizardContext();
   const [jobs, setJobs] = useState<JobSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -110,7 +112,7 @@ export default function DashboardPage() {
         <div className="flex justify-center mb-6 sm:mb-8">
           <button
             type="button"
-            onClick={() => navigate("/intake")}
+            onClick={() => { reset(); navigate("/intake"); }}
             className="
               w-full max-w-md py-3.5 sm:py-4 text-base sm:text-lg font-bold
               bg-olive-700 text-white rounded-[--radius-md]
