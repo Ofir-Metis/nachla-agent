@@ -35,10 +35,12 @@ PHASE_MESSAGES: dict[str, str] = {
     "taba_analysis": 'ניתוח תב"עות חלות',
     "building_mapping": "מיפוי וסיווג מבנים",
     "classification_checkpoint": "ממתין לאישור סיווג מבנים",
+    "calculations": "ביצוע חישובים",
     "usage_fees": "חישוב דמי שימוש",
     "permit_fees": "חישוב דמי היתר",
     "capitalization": "חישוב היוון",
     "split": "חישוב פיצול",
+    "report": "הרכבת דוח",
     "report_assembly": "הרכבת דוח",
     "review": "בקרה ואישור",
     "output": "הפקת פלט סופי",
@@ -386,8 +388,9 @@ class JobQueue:
                 # Use pre-extracted buildings — skip LLM analysis
                 logger.info("Job %s: Using %d pre-extracted buildings", job_id, len(pre_buildings))
                 buildings = []
-                for bd in pre_buildings:
+                for i, bd in enumerate(pre_buildings):
                     try:
+                        bd.setdefault("building_order", i + 1)
                         buildings.append(Building(**bd))
                     except Exception as exc:
                         logger.warning("Failed to parse pre-extracted building: %s", exc)
@@ -422,8 +425,9 @@ class JobQueue:
                 job.buildings = [b.model_dump() for b in buildings]
                 confirmed_dicts = await self.pause_for_checkpoint(job_id, job.buildings)
                 buildings = []
-                for bd in confirmed_dicts:
+                for i, bd in enumerate(confirmed_dicts):
                     try:
+                        bd.setdefault("building_order", i + 1)
                         buildings.append(Building(**bd))
                     except Exception as exc:
                         logger.warning("Failed to parse confirmed building: %s", exc)

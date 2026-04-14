@@ -29,7 +29,7 @@ from config.settings import AppSettings, get_settings
 from models.building import Building, BuildingStatus, BuildingType
 from tools.exceptions import CalculationInputError
 from models.nachla import ClientGoal, Nachla, PriorityArea
-from models.report import ReportData
+from models.report import BuildingCard, ReportData
 from models.taba import Taba, resolve_primary_taba
 
 logger = logging.getLogger(__name__)
@@ -1206,7 +1206,33 @@ class NachlaAgent:
             hivun_375_result=calc_results.get("hivun", {}).get("hivun_375"),
             hivun_33_result=calc_results.get("hivun", {}).get("hivun_33"),
             split_results=calc_results.get("split", {}).get("cost", []),
+            betterment_levy=sum(
+                r.get("result", 0) for r in calc_results.get("betterment", {}).values()
+                if isinstance(r, dict)
+            ),
         )
+
+        # Build building cards from calculation results
+        for building in buildings:
+            bid = building.id
+            permit = calc_results.get("regularization", {}).get("building_results", {}).get(bid, {})
+            permit_fees = permit.get("result", 0) if isinstance(permit, dict) else 0
+            usage = calc_results.get("usage_fees", {}).get("building_fees", {}).get(bid, {})
+            usage_fees = usage.get("result", 0) if isinstance(usage, dict) else 0
+            betterment = calc_results.get("betterment", {}).get(f"building_{bid}", {})
+            betterment_val = betterment.get("result", 0) if isinstance(betterment, dict) else 0
+
+            card = BuildingCard(
+                building_id=bid,
+                building_name=building.name,
+                status_description=building.status.value,
+                action="regularize" if building.status != BuildingStatus.COMPLIANT else "compliant",
+                permit_fees=permit_fees,
+                usage_fees=usage_fees,
+                betterment_levy=betterment_val,
+                total_cost=permit_fees + usage_fees + betterment_val,
+            )
+            report.building_cards.append(card)
 
         # Add priority area disclaimer
         report.add_priority_area_disclaimer(nachla.priority_area.value)

@@ -323,7 +323,7 @@ class TestDmeiShimush:
         assert result["result"] == 0.0
 
     def test_dmei_shimush_house2_deviation(self):
-        """House 2 deviation uses 2 years only."""
+        """House 2 deviation charges only on area above 160sqm exemption, 2 years."""
         result = calculate_dmei_shimush(
             area_sqm=200,
             area_type="main",
@@ -332,7 +332,9 @@ class TestDmeiShimush:
             building_order=2,
         )
         assert "error" not in result
-        expected = 200 * 1.0 * 7000 * 0.05 * 2
+        # Only the deviation above 160sqm exemption is charged
+        deviation = 200 - float(CONFIG["house_exemption_sqm"]["value"])  # 40
+        expected = deviation * 1.0 * 7000 * 0.05 * 2
         assert result["result"] == pytest.approx(expected, rel=1e-6)
         assert result["years"] == 2
 
@@ -1148,3 +1150,70 @@ class TestGoldenRateValidation:
     def test_priority_area_b_discount(self):
         """Priority area B permit discount should be 25%."""
         assert CONFIG["priority_area_discounts"]["B"]["permit"] == 0.25
+
+
+# ===================================================================
+# Usage Fee Partial Exemption (house 2 deviation bug fix)
+# ===================================================================
+
+class TestUsageFeePartialExemption:
+    """Verify house 2 charges only on deviation above exemption threshold."""
+
+    SHOVI = 7000.0
+    HOUSE_EXEMPTION = float(CONFIG["house_exemption_sqm"]["value"])  # 160
+
+    def test_house2_within_exemption_free(self):
+        """150 sqm house 2 is fully exempt (within 160 threshold)."""
+        result = calculate_dmei_shimush(
+            area_sqm=150,
+            area_type="main",
+            shovi_per_sqm=self.SHOVI,
+            usage_type="residential",
+            building_order=2,
+        )
+        assert result["result"] == 0.0
+
+    def test_house2_over_exemption_partial(self):
+        """200 sqm house 2 charges only on 40 sqm deviation (200 - 160)."""
+        result = calculate_dmei_shimush(
+            area_sqm=200,
+            area_type="main",
+            shovi_per_sqm=self.SHOVI,
+            usage_type="residential",
+            building_order=2,
+        )
+        deviation_sqm = 200 - self.HOUSE_EXEMPTION  # 40
+        eco_coeff = float(CONFIG["usage_fee_coefficients"]["main"])  # 1.0
+        usage_rate = float(CONFIG["usage_fee_residential"]["value"])  # 0.05
+        years = int(CONFIG["usage_period_2nd_house_years"]["value"])  # 2
+        expected = deviation_sqm * eco_coeff * self.SHOVI * usage_rate * years
+        assert result["result"] == pytest.approx(expected, rel=1e-6)
+        assert result["result"] > 0
+        # Verify exemption message is present
+        assert any("פטור" in e for e in result.get("exemptions", []))
+
+    def test_house2_exact_threshold(self):
+        """Exactly 160 sqm house 2 is fully exempt."""
+        result = calculate_dmei_shimush(
+            area_sqm=160,
+            area_type="main",
+            shovi_per_sqm=self.SHOVI,
+            usage_type="residential",
+            building_order=2,
+        )
+        assert result["result"] == 0.0
+
+    def test_house3_no_exemption(self):
+        """80 sqm house 3 charges on full area (no house 2 exemption)."""
+        result = calculate_dmei_shimush(
+            area_sqm=80,
+            area_type="main",
+            shovi_per_sqm=self.SHOVI,
+            usage_type="residential",
+            building_order=3,
+        )
+        eco_coeff = float(CONFIG["usage_fee_coefficients"]["main"])
+        usage_rate = float(CONFIG["usage_fee_residential"]["value"])
+        years = int(CONFIG["usage_period_3rd_plus_years"]["value"])
+        expected = 80 * eco_coeff * self.SHOVI * usage_rate * years
+        assert result["result"] == pytest.approx(expected, rel=1e-6)

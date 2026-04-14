@@ -122,7 +122,7 @@ def calculate_dmei_shimush(
             "inputs": inputs,
         }
 
-    # House 2 within permit and <= 160sqm: exempt
+    # House 2 exemption: first 160sqm exempt, charge only deviation above threshold
     house_exemption_sqm = float(config["house_exemption_sqm"]["value"])
     if building_order == 2 and area_sqm <= house_exemption_sqm:
         exemptions.append(
@@ -135,6 +135,13 @@ def calculate_dmei_shimush(
             "rates_used": {"house_exemption_sqm": house_exemption_sqm},
             "inputs": inputs,
         }
+
+    if building_order == 2 and area_sqm > house_exemption_sqm:
+        original_area = area_sqm
+        area_sqm = area_sqm - house_exemption_sqm
+        exemptions.append(
+            f"בית שני - פטור על {house_exemption_sqm} מ\"ר ראשונים, חיוב על {area_sqm} מ\"ר חריגה מתוך {original_area} מ\"ר"
+        )
 
     # --- Calculate usage fee ---
     eco_coeff = float(eco_coefficients[area_type])

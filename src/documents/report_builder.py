@@ -149,11 +149,14 @@ def build_report(
                 service = ur.get('service_area_sqm', 0)
                 _add_rtl_paragraph(doc, f"זכויות ליח' דיור: {main} מ\"ר עיקרי + {service} מ\"ר שירות")
 
+            # Enhancement 6: attached_unit_allowed flag
             flags = []
             if t.get('split_allowed'):
                 flags.append("פיצול מותר")
             if t.get('pool_allowed'):
                 flags.append("בריכה מותרת")
+            if t.get('attached_unit_allowed'):
+                flags.append("יחידה צמודה מותרת")
             if flags:
                 _add_rtl_paragraph(doc, "אפשרויות: " + " | ".join(flags))
         doc.add_paragraph()
@@ -164,10 +167,10 @@ def build_report(
     # ── Section 4: Building Status ──
     _add_rtl_paragraph(doc, "סטטוס מבנים בנחלה:", bold=True, size=13)
     if buildings:
-        # Table
-        table = doc.add_table(rows=1, cols=5)
+        # Enhancement 1: Expanded 8-column building table
+        table = doc.add_table(rows=1, cols=8)
         table.style = 'Table Grid'
-        headers = ['#', 'שם מבנה', 'סוג', 'שטח עיקרי', 'סטטוס']
+        headers = ['#', 'שם מבנה', 'סוג', 'שטח עיקרי', 'שטח שירות', 'ממ"ד', 'סטטוס', 'סטייה']
         for i, h in enumerate(headers):
             cell = table.rows[0].cells[i]
             cell.text = h
@@ -190,7 +193,11 @@ def build_report(
             row.cells[1].text = b.get('name', '')
             row.cells[2].text = type_labels.get(b.get('building_type', ''), b.get('building_type', ''))
             row.cells[3].text = f"{b.get('main_area_sqm', 0)} מ\"ר"
-            row.cells[4].text = status_labels.get(b.get('status', ''), b.get('status', ''))
+            row.cells[4].text = f"{b.get('service_area_sqm', 0)} מ\"ר"
+            row.cells[5].text = f"{b.get('mamad_area_sqm', 0)} מ\"ר"
+            row.cells[6].text = status_labels.get(b.get('status', ''), b.get('status', ''))
+            deviation = b.get('deviation_sqm', 0)
+            row.cells[7].text = f"{deviation} מ\"ר" if deviation else "-"
             for cell in row.cells:
                 for p in cell.paragraphs:
                     _set_rtl(p)
@@ -199,7 +206,47 @@ def build_report(
         _add_rtl_paragraph(doc, "לא זוהו מבנים.", color=(180, 100, 0))
         doc.add_paragraph()
 
-    # ── Section 5: Hivun (Capitalization) ──
+    # ── Section 4b: Split (Enhancement 2) ──
+    split_data = calc_results.get('split', {})
+    if split_data:
+        _add_rtl_paragraph(doc, "פיצול נחלה:", bold=True, size=13)
+        eligibility = split_data.get('eligibility', {})
+        is_eligible = eligibility.get('eligible', False)
+        reason = eligibility.get('reason', '')
+
+        if is_eligible:
+            _add_rtl_paragraph(doc, "הנחלה זכאית לפיצול.")
+            split_cost = split_data.get('cost', {}).get('result', 0)
+            if split_cost:
+                _add_rtl_paragraph(doc, f"עלות פיצול מוערכת: {_fmt_currency(split_cost)}")
+        else:
+            _add_rtl_paragraph(doc, f"הנחלה אינה זכאית לפיצול: {reason}")
+
+        # bar_reshut warning
+        auth_type = nachla.get('authorization_type', '')
+        client_goals = nachla.get('client_goals', [])
+        if auth_type == 'bar_reshut' and 'split' in client_goals:
+            warn_p = _add_rtl_paragraph(doc, "בר-רשות אינו רשאי לפצל ללא חוזה חכירה — נדרש היוון 33% תחילה",
+                                        bold=True, color=(255, 0, 0))
+        doc.add_paragraph()
+
+    # ── Section 5: Context Notes (Enhancement 5) ──
+    _add_rtl_paragraph(doc, "הערות כלליות:", bold=True, size=13)
+
+    is_capitalized = nachla.get('is_capitalized', False)
+    if is_capitalized:
+        cap_track = nachla.get('capitalization_track', '')
+        _add_rtl_paragraph(doc, f"הנחלה מהוונת במסלול {cap_track}" if cap_track else "הנחלה מהוונת")
+    else:
+        _add_rtl_paragraph(doc, "הנחלה אינה מהוונת כיום")
+
+    num_houses = nachla.get('num_existing_houses', 0)
+    _add_rtl_paragraph(doc, f"{num_houses} בתי מגורים קיימים")
+
+    _add_rtl_paragraph(doc, 'ממ"ד ראשון בכל בית — פטור עד 12 מ"ר מדמי היתר')
+    doc.add_paragraph()
+
+    # ── Section 6: Hivun (Capitalization) ──
     _add_rtl_paragraph(doc, "היוון המשק:", bold=True, size=13)
 
     hivun = calc_results.get('hivun', {})
@@ -225,11 +272,23 @@ def build_report(
             _add_rtl_paragraph(doc, "מסלול 3.75% זול יותר בכניסה, אך פיצול ידרוש תשלום נוסף.")
         doc.add_paragraph()
 
-    # ── Section 6: Cost Summary ──
+    # ── Section 7: Cost Summary (Enhancement 3) ──
     _add_rtl_paragraph(doc, "סיכום עלויות:", bold=True, size=13)
 
     usage = calc_results.get('usage_fees', {}).get('total', 0)
     permit = calc_results.get('regularization', {}).get('total_permit_fees', 0)
+    split_cost = calc_results.get('split', {}).get('cost', {}).get('result', 0)
+
+    # Sum all betterment results
+    betterment_data = calc_results.get('betterment', {})
+    betterment_total = sum(
+        v.get('result', 0) for v in betterment_data.values() if isinstance(v, dict)
+    )
+
+    # Hivun: use the lower of the two tracks
+    hivun_lower = min(h375_total, h33_total) if h375_total > 0 and h33_total > 0 else max(h375_total, h33_total)
+
+    grand_total = usage + permit + betterment_total + split_cost + hivun_lower
 
     cost_table = doc.add_table(rows=1, cols=2)
     cost_table.style = 'Table Grid'
@@ -247,6 +306,8 @@ def build_report(
         ("דמי היתר", permit),
         ("היוון 3.75%", h375_total),
         ("היוון 33%", h33_total),
+        ("פיצול", split_cost),
+        ("היטל השבחה", betterment_total),
     ]
     for label, amount in costs:
         row = cost_table.add_row()
@@ -255,17 +316,39 @@ def build_report(
         for cell in row.cells:
             for p in cell.paragraphs:
                 _set_rtl(p)
+
+    # Grand total row (bold)
+    total_row = cost_table.add_row()
+    total_row.cells[0].text = "סה\"כ מוערך"
+    total_row.cells[1].text = _fmt_currency(grand_total)
+    for cell in total_row.cells:
+        for p in cell.paragraphs:
+            _set_rtl(p)
+            for run in p.runs:
+                run.bold = True
+
+    _add_rtl_paragraph(doc, "* מסלולי ההיוון (3.75% ו-33%) הם חלופיים — הסה\"כ כולל את הנמוך מביניהם.",
+                       size=9, color=(100, 100, 100))
     doc.add_paragraph()
 
-    # ── Section 7: Priority Area ──
+    # ── Section 8: Priority Area (Enhancement 4) ──
     if priority and priority != 'none':
         area_labels = {'A': 'א', 'B': 'ב', 'frontline': 'קו עימות'}
         _add_rtl_paragraph(doc, "הנחות אזור עדיפות לאומית:", bold=True, size=13)
         _add_rtl_paragraph(doc, f"מושב {moshav} מוגדר תחת אזור עדיפות לאומית {area_labels.get(priority, priority)}.")
         _add_rtl_paragraph(doc, "בישובים המוגדרים כאזורי עדיפות לאומית ישנן הטבות במספר תשלומים עבור רמ\"י.")
+
+        # Quantified priority discounts
+        priority_discount_375 = h375.get('priority_discount_applied', 0) if isinstance(h375, dict) else 0
+        rate_applied_33 = h33.get('rate_applied', 0) if isinstance(h33, dict) else 0
+
+        if priority_discount_375:
+            _add_rtl_paragraph(doc, f"הנחת היוון 3.75%: {priority_discount_375 * 100:.0f}%")
+        if rate_applied_33:
+            _add_rtl_paragraph(doc, f"שיעור דמי רכישה: {rate_applied_33 * 100:.2f}% במקום 33%")
         doc.add_paragraph()
 
-    # ── Section 8: Footer ──
+    # ── Section 9: Footer ──
     _add_rtl_paragraph(doc, "───────────────────────────────")
     p = _add_rtl_paragraph(doc, f"דוח זה הופק באמצעות מערכת בדיקת התכנות נחלות | {_fmt_date(report_date)}",
                            size=8, color=(150, 150, 150))

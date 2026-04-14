@@ -127,6 +127,7 @@ class ReportData(BaseModel):
     total_regularization_cost: float = Field(default=0, ge=0, description='עלות הסדרה כוללת בש"ח')
     total_usage_fees: float = Field(default=0, ge=0, description='סה"כ דמי שימוש בש"ח')
     total_permit_fees: float = Field(default=0, ge=0, description='סה"כ דמי היתר בש"ח')
+    betterment_levy: float = Field(default=0, ge=0, description='סה"כ היטל השבחה בש"ח')
 
     # Study objectives (report section 2)
     study_objectives: list[str] = Field(
