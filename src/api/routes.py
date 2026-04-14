@@ -615,11 +615,11 @@ async def get_job_results(job_id: str, request: Request) -> ResultsResponse:
     hivun_375_total = result.get("hivun_375_total")
     if hivun_375_total is None:
         hivun_375 = result.get("hivun_375_result")
-        hivun_375_total = hivun_375.get("total_cost") if isinstance(hivun_375, dict) else None
+        hivun_375_total = hivun_375.get("result") or hivun_375.get("total_cost") if isinstance(hivun_375, dict) else None
     hivun_33_total = result.get("hivun_33_total")
     if hivun_33_total is None:
         hivun_33 = result.get("hivun_33_result")
-        hivun_33_total = hivun_33.get("total_cost") if isinstance(hivun_33, dict) else None
+        hivun_33_total = hivun_33.get("result") or hivun_33.get("total_cost") if isinstance(hivun_33, dict) else None
 
     return ResultsResponse(
         job_id=job.id,

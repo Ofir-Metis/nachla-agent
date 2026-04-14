@@ -910,6 +910,7 @@ class NachlaAgent:
         """
         try:
             # Get plot size from primary taba
+
             primary_taba = next((t for t in tabas if t.is_primary), tabas[0] if tabas else None)
             plot_size = primary_taba.plot_size_sqm if primary_taba else 2500
 
@@ -934,6 +935,7 @@ class NachlaAgent:
                     "mamad_sqm": sum(b.mamad_area_sqm for b in buildings),
                 }
 
+
             result = await self.invoke_tool(
                 "calculate_nachla_sqm_equivalent",
                 {
@@ -942,8 +944,10 @@ class NachlaAgent:
                     "taba_rights": taba_rights,
                 },
             )
+
             return result
         except Exception as exc:
+
             logger.error("Sqm equivalent calc failed: %s", exc)
             return {"error": str(exc), "total_nachla_sqm": 0}
 
@@ -990,7 +994,7 @@ class NachlaAgent:
                 },
             )
             results["hivun_375"] = result_375
-            results["hivun_375_cost"] = result_375.get("total_cost", 0)
+            results["hivun_375_cost"] = result_375.get("result", 0)
         except Exception as exc:
             logger.error("Hivun 3.75%% calc failed: %s", exc)
             results["hivun_375"] = {"error": str(exc)}
@@ -1008,7 +1012,7 @@ class NachlaAgent:
                 },
             )
             results["hivun_33"] = result_33
-            results["hivun_33_cost"] = result_33.get("total_cost", 0)
+            results["hivun_33_cost"] = result_33.get("result", 0)
         except Exception as exc:
             logger.error("Hivun 33%% calc failed: %s", exc)
             results["hivun_33"] = {"error": str(exc)}

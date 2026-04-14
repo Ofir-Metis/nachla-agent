@@ -336,6 +336,8 @@ class JobQueue:
 
             # Pre-populate tabas from user input (entered on Taba page before submission)
             pre_tabas = job.intake_data.get("pre_extracted_tabas")
+            logger.info("Job %s: pre_extracted_tabas=%s count=%d",
+                       job_id, pre_tabas is not None, len(pre_tabas) if pre_tabas else 0)
             if pre_tabas:
                 from models.taba import Taba, TabaRights
                 for td in pre_tabas:
@@ -352,7 +354,7 @@ class JobQueue:
                         taba_dict.pop("source", None)
                         nachla.tabas.append(Taba(**taba_dict))
                     except Exception as exc:
-                        logger.warning("Failed to parse pre-extracted taba: %s", exc)
+                        logger.error("Failed to parse pre-extracted taba: %s", exc, exc_info=True)
                 logger.info("Job %s: Pre-loaded %d tabas from user input", job_id, len(nachla.tabas))
 
             # Build system prompt
@@ -501,12 +503,12 @@ class JobQueue:
                 "total_permit_fees": report_data.total_permit_fees,
                 "betterment_levy": report_data.betterment_levy if hasattr(report_data, "betterment_levy") else 0,
                 "hivun_375_total": (
-                    report_data.hivun_375_result.get("total_cost", 0)
+                    (report_data.hivun_375_result.get("result") or report_data.hivun_375_result.get("total_cost", 0))
                     if isinstance(report_data.hivun_375_result, dict)
                     else 0
                 ),
                 "hivun_33_total": (
-                    report_data.hivun_33_result.get("total_cost", 0)
+                    (report_data.hivun_33_result.get("result") or report_data.hivun_33_result.get("total_cost", 0))
                     if isinstance(report_data.hivun_33_result, dict)
                     else 0
                 ),
