@@ -479,6 +479,64 @@ class JobQueue:
             except Exception as exc:
                 logger.error("Job %s: Word generation failed: %s", job_id, exc)
 
+            # Generate Excel summary
+            excel_path = None
+            try:
+                from pathlib import Path as P
+                P(output_dir).mkdir(parents=True, exist_ok=True)
+                excel_path = f"{output_dir}/{job_id}.xlsx"
+                import openpyxl
+                wb = openpyxl.Workbook()
+                ws = wb.active
+                ws.title = "סיכום תחשיבים"
+                ws.sheet_view.rightToLeft = True
+
+                # Header
+                ws.append(["סיכום בדיקת התכנות נחלה"])
+                ws.append([f"בעל נחלה: {nachla.owner_name}", f"מושב: {nachla.moshav_name}"])
+                ws.append([f"גוש: {nachla.gush}", f"חלקה: {nachla.helka}"])
+                ws.append([])
+
+                # Cost summary
+                ws.append(["סוג תשלום", "סכום (ש\"ח)"])
+                ws.append(["דמי שימוש", report_data.total_usage_fees])
+                ws.append(["דמי היתר", report_data.total_permit_fees])
+                h375 = calc_results.get("hivun", {}).get("hivun_375", {}).get("result", 0)
+                h33 = calc_results.get("hivun", {}).get("hivun_33", {}).get("result", 0)
+                ws.append(["היוון 3.75%", h375])
+                ws.append(["היוון 33%", h33])
+                ws.append([])
+
+                # Buildings
+                ws.append(["מבנים"])
+                ws.append(["#", "שם", "סוג", "סטטוס", "שטח עיקרי", "חריגה"])
+                for b in buildings:
+                    ws.append([
+                        b.id, b.name, b.building_type.value, b.status.value,
+                        b.main_area_sqm, b.deviation_sqm or 0,
+                    ])
+                ws.append([])
+
+                # Tabas
+                if tabas:
+                    ws.append(["תב\"עות"])
+                    ws.append(["מספר", "שם", "סטטוס", "שטח מגרש", "יח' דיור"])
+                    for t in tabas:
+                        ws.append([t.taba_number, t.taba_name, t.status, t.plot_size_sqm, t.num_units_allowed])
+
+                # Style header
+                from openpyxl.styles import Font
+                ws['A1'].font = Font(bold=True, size=14)
+                for cell in ws[5]:
+                    if cell.value:
+                        cell.font = Font(bold=True)
+
+                wb.save(excel_path)
+                logger.info("Job %s: Excel report generated at %s", job_id, excel_path)
+            except Exception as exc:
+                logger.error("Job %s: Excel generation failed: %s", job_id, exc)
+                excel_path = None
+
             # Save audit log
             try:
                 from pathlib import Path as P
@@ -495,7 +553,7 @@ class JobQueue:
             job.state = JobState.COMPLETE
             job.result = {
                 "word_path": word_path,
-                "excel_path": None,
+                "excel_path": excel_path,
                 "audit_path": audit_path,
                 "pdf_path": None,
                 "total_regularization_cost": report_data.total_regularization_cost,
