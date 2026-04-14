@@ -559,7 +559,7 @@ class NachlaAgent:
                     "get_priority_area",
                     {"settlement_name": nachla.moshav_name},
                 )
-                area = result.get("priority_area", "none")
+                area = result.get("value") or result.get("priority_area") or result.get("result") or "none"
                 if area and area != "none":
                     nachla.priority_area = PriorityArea(area)
                     logger.info("Detected priority area: %s", area)
