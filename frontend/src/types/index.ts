@@ -123,6 +123,17 @@ export interface JobCreateResponse {
   message: string;
 }
 
+export interface BuildingCostCard {
+  building_id: number;
+  building_name: string;
+  status_description: string;
+  action: string;
+  permit_fees: number;
+  usage_fees: number;
+  betterment_levy: number;
+  total_cost: number;
+}
+
 export interface CostSummary {
   total_regularization_cost: number;
   total_usage_fees: number;
@@ -130,6 +141,7 @@ export interface CostSummary {
   betterment_levy: number;
   hivun_375_total?: number;
   hivun_33_total?: number;
+  building_cards?: BuildingCostCard[];
 }
 
 export interface JobSummary {

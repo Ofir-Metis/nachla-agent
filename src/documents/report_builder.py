@@ -277,7 +277,9 @@ def build_report(
 
     usage = calc_results.get('usage_fees', {}).get('total', 0)
     permit = calc_results.get('regularization', {}).get('total_permit_fees', 0)
-    split_cost = calc_results.get('split', {}).get('cost', {}).get('result', 0)
+    # Only include split cost if eligible
+    split_eligible = calc_results.get('split', {}).get('eligibility', {}).get('eligible', False)
+    split_cost = calc_results.get('split', {}).get('cost', {}).get('result', 0) if split_eligible else 0
 
     # Sum all betterment results
     betterment_data = calc_results.get('betterment', {})

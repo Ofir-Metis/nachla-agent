@@ -599,6 +599,10 @@ class JobQueue:
                     if isinstance(report_data.hivun_33_result, dict)
                     else 0
                 ),
+                "building_cards": [
+                    card.model_dump() if hasattr(card, "model_dump") else card
+                    for card in report_data.building_cards
+                ] if hasattr(report_data, "building_cards") else [],
                 "token_usage": llm_client.token_usage if llm_client else {},
                 "cost_estimate": llm_client.estimate_cost() if llm_client else {},
             }

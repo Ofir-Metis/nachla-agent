@@ -122,6 +122,33 @@ export default function ResultsPage() {
           total={total}
         />
 
+        {/* Per-building cost breakdown */}
+        {results.building_cards && results.building_cards.length > 0 && (
+          <div className="mt-6">
+            <h2 className="font-semibold text-[0.95rem] text-soil-800 mb-3">פירוט עלויות לפי מבנה</h2>
+            <div className="space-y-2">
+              {results.building_cards.map((card: { building_id: number; building_name: string; status_description: string; permit_fees: number; usage_fees: number; betterment_levy: number; total_cost: number }) => (
+                <div key={card.building_id} className="flex items-center justify-between p-3 bg-white border border-[#D8D0C4] rounded-[--radius-sm]">
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium text-[0.88rem] text-soil-800 truncate">
+                      #{card.building_id} {card.building_name}
+                    </div>
+                    <div className="text-[0.78rem] text-soil-500 flex gap-3 mt-0.5 flex-wrap">
+                      {card.permit_fees > 0 && <span>דמי היתר: {card.permit_fees.toLocaleString()} ₪</span>}
+                      {card.usage_fees > 0 && <span>דמי שימוש: {card.usage_fees.toLocaleString()} ₪</span>}
+                      {card.betterment_levy > 0 && <span>השבחה: {card.betterment_levy.toLocaleString()} ₪</span>}
+                      {card.total_cost === 0 && <span className="text-success">פטור</span>}
+                    </div>
+                  </div>
+                  <div className="text-[0.95rem] font-semibold text-soil-800 shrink-0 ms-3">
+                    {card.total_cost > 0 ? `${card.total_cost.toLocaleString()} ₪` : "—"}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Hivun comparison */}
         <HivunComparison
           hivun375={results.hivun_375_total}
