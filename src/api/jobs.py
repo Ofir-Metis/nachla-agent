@@ -464,20 +464,21 @@ class JobQueue:
             audit_path = None
 
             try:
-                from documents.word_generator import WordGenerator
+                from documents.report_builder import build_report
                 from pathlib import Path
 
                 Path(output_dir).mkdir(parents=True, exist_ok=True)
-                gen = WordGenerator()
-                template_path = "data/templates/סיכום בדיקת התכנות טמפלט.docx"
-
-                if Path(template_path).exists():
-                    word_path = gen.generate_report(
-                        report_data, template_path, f"{output_dir}/{job_id}.docx",
-                    )
-                    logger.info("Job %s: Word report generated at %s", job_id, word_path)
+                word_path = build_report(
+                    nachla=nachla.model_dump(),
+                    buildings=[b.model_dump() for b in buildings],
+                    tabas=[t.model_dump() for t in tabas],
+                    calc_results=calc_results,
+                    report_date=report_data.report_date,
+                    output_path=f"{output_dir}/{job_id}.docx",
+                )
+                logger.info("Job %s: Word report generated at %s", job_id, word_path)
             except Exception as exc:
-                logger.error("Job %s: Word generation failed: %s", job_id, exc)
+                logger.error("Job %s: Word generation failed: %s", job_id, exc, exc_info=True)
 
             # Generate Excel summary
             excel_path = None
