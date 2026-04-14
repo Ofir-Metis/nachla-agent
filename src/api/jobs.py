@@ -334,6 +334,27 @@ class JobQueue:
             # --- Build Nachla model from intake data ---
             nachla = Nachla(**job.intake_data)
 
+            # Pre-populate tabas from user input (entered on Taba page before submission)
+            pre_tabas = job.intake_data.get("pre_extracted_tabas")
+            if pre_tabas:
+                from models.taba import Taba, TabaRights
+                for td in pre_tabas:
+                    try:
+                        taba_dict = dict(td)
+                        # Convert flat main/service area to unit_rights list
+                        if "main_area_sqm" in taba_dict and "unit_rights" not in taba_dict:
+                            main = float(taba_dict.pop("main_area_sqm", 0))
+                            service = float(taba_dict.pop("service_area_sqm", 0))
+                            num_units = int(float(taba_dict.get("num_units_allowed", 2)))
+                            taba_dict["unit_rights"] = [
+                                {"main_area_sqm": main, "service_area_sqm": service}
+                            ] * max(1, num_units)
+                        taba_dict.pop("source", None)
+                        nachla.tabas.append(Taba(**taba_dict))
+                    except Exception as exc:
+                        logger.warning("Failed to parse pre-extracted taba: %s", exc)
+                logger.info("Job %s: Pre-loaded %d tabas from user input", job_id, len(nachla.tabas))
+
             # Build system prompt
             priority = nachla.priority_area.value if nachla.priority_area else None
             agent.system_prompt = build_system_prompt(priority_area=priority)
@@ -369,14 +390,7 @@ class JobQueue:
                     except Exception as exc:
                         logger.warning("Failed to parse pre-extracted building: %s", exc)
                 nachla.buildings = buildings
-                if pre_tabas:
-                    from models.taba import Taba
-                    for td in pre_tabas:
-                        try:
-                            tabas.append(Taba(**td))
-                        except Exception:
-                            pass
-                    nachla.tabas = tabas
+                # Tabas already loaded from pre_extracted_tabas before Phase 1
             else:
                 # No pre-extracted data — run LLM document analysis
                 # Wait briefly for file uploads to arrive (uploaded async after job creation)
