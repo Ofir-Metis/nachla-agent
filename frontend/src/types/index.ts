@@ -70,6 +70,27 @@ export interface DocumentClassification {
   note: string;
 }
 
+export type TabaStatus = "approved" | "in_process" | "deposited";
+
+export interface TabaData {
+  taba_number: string;
+  taba_name: string;
+  status: TabaStatus;
+  approval_date?: string;
+  plot_id?: string;
+  plot_size_sqm: number;
+  num_units_allowed: number;
+  main_area_sqm: number;
+  service_area_sqm: number;
+  plach_area_sqm?: number;
+  split_allowed: boolean;
+  split_min_plot_sqm?: number;
+  pool_allowed?: boolean;
+  attached_unit_allowed?: boolean;
+  source: "govmap" | "pdf_extraction" | "manual";
+  is_primary: boolean;
+}
+
 export interface ExtractionResponse {
   buildings: Building[];
   tabas: Record<string, unknown>[];

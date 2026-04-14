@@ -151,12 +151,12 @@ export default function ConfirmPage() {
           {/* Back button */}
           <button
             type="button"
-            onClick={() => navigate("/upload")}
+            onClick={() => navigate("/taba")}
             disabled={submitting}
             className="px-6 py-3 sm:py-3.5 rounded-[--radius-md] font-semibold text-[0.95rem] sm:text-base bg-transparent text-soil-600 border-[1.5px] border-[#D8D0C4] hover:border-olive-300 hover:bg-olive-50 active:translate-y-0 transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span className="text-[1.1em]">&rarr;</span>
-            <span>חזרה לעריכה</span>
+            <span>חזרה לנתוני תב"ע</span>
           </button>
 
           {/* Start processing button */}

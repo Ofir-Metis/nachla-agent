@@ -101,7 +101,7 @@ export default function ValidatePage() {
 
           <button
             type="button"
-            onClick={() => navigate("/confirm")}
+            onClick={() => navigate("/taba")}
             className="sm:ms-auto px-8 py-3 sm:py-3.5 rounded-[--radius-md] font-semibold text-[0.95rem] sm:text-base bg-olive-700 text-white shadow-[--shadow-sm] hover:bg-olive-600 hover:shadow-[--shadow-md] hover:-translate-y-px active:translate-y-0 transition-all cursor-pointer flex items-center justify-center gap-2"
           >
             <span>אישור והמשך</span>

@@ -9,6 +9,7 @@ import ProcessingPage from "./pages/ProcessingPage";
 import CheckpointPage from "./pages/CheckpointPage";
 import ResultsPage from "./pages/ResultsPage";
 import ValidatePage from "./pages/ValidatePage";
+import TabaPage from "./pages/TabaPage";
 import NotFoundPage from "./pages/NotFoundPage";
 
 export default function App() {
@@ -20,6 +21,7 @@ export default function App() {
           <Route path="/intake" element={<IntakePage />} />
           <Route path="/upload" element={<UploadPage />} />
           <Route path="/validate" element={<ValidatePage />} />
+          <Route path="/taba" element={<TabaPage />} />
           <Route path="/confirm" element={<ConfirmPage />} />
           <Route path="/jobs/:jobId/processing" element={<ProcessingPage />} />
           <Route path="/jobs/:jobId/checkpoint" element={<CheckpointPage />} />

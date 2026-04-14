@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { IntakeData, Building } from "@/types";
+import type { IntakeData, Building, TabaData } from "@/types";
 
 /* ────────────────────────────────────────────
    Types
@@ -31,9 +31,11 @@ interface WizardState {
   /** Buildings extracted from uploaded documents by AI */
   extractedBuildings: Building[];
   /** Tabas extracted from uploaded documents by AI */
-  extractedTabas: Record<string, unknown>[];
+  extractedTabas: TabaData[];
   /** Warnings from extraction */
   extractionWarnings: string[];
+  /** Whether user chose to skip taba input */
+  tabaSkipped: boolean;
 }
 
 interface WizardActions {
@@ -42,8 +44,10 @@ interface WizardActions {
   setFile: (slotId: string, file: File | null) => void;
   setJobId: (id: string) => void;
   setCurrentScreen: (screen: WizardScreen) => void;
-  setExtractedData: (buildings: Building[], tabas: Record<string, unknown>[], warnings: string[]) => void;
+  setExtractedData: (buildings: Building[], tabas: TabaData[], warnings: string[]) => void;
   updateExtractedBuilding: (id: number, updates: Partial<Building>) => void;
+  setTabaData: (tabas: TabaData[]) => void;
+  setTabaSkipped: (skipped: boolean) => void;
   reset: () => void;
   clearDraft: () => void;
   dismissDraft: () => void;
@@ -112,7 +116,8 @@ export function WizardProvider({ children }: { children: ReactNode }) {
   const [currentScreen, setCurrentScreen] = useState<WizardScreen>("intake");
   const [hasDraft, setHasDraft] = useState<boolean>(draft !== null);
   const [extractedBuildings, setExtractedBuildings] = useState<Building[]>([]);
-  const [extractedTabas, setExtractedTabas] = useState<Record<string, unknown>[]>([]);
+  const [extractedTabas, setExtractedTabas] = useState<TabaData[]>([]);
+  const [tabaSkipped, setTabaSkippedState] = useState(false);
   const [extractionWarnings, setExtractionWarnings] = useState<string[]>([]);
 
   // Debounced localStorage persistence
@@ -155,7 +160,16 @@ export function WizardProvider({ children }: { children: ReactNode }) {
     setJobIdState(id);
   }, []);
 
-  const setExtractedData = useCallback((buildings: Building[], tabas: Record<string, unknown>[], warnings: string[]) => {
+  const setTabaData = useCallback((tabas: TabaData[]) => {
+    setExtractedTabas(tabas);
+    setTabaSkippedState(false);
+  }, []);
+
+  const setTabaSkipped = useCallback((skipped: boolean) => {
+    setTabaSkippedState(skipped);
+  }, []);
+
+  const setExtractedData = useCallback((buildings: Building[], tabas: TabaData[], warnings: string[]) => {
     setExtractedBuildings(buildings);
     setExtractedTabas(tabas);
     setExtractionWarnings(warnings);
@@ -176,6 +190,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
     setExtractedBuildings([]);
     setExtractedTabas([]);
     setExtractionWarnings([]);
+    setTabaSkippedState(false);
     try {
       localStorage.removeItem(STORAGE_KEY);
     } catch {
@@ -206,6 +221,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
         extractedBuildings,
         extractedTabas,
         extractionWarnings,
+        tabaSkipped,
         updateFormData,
         updateField,
         setFile,
@@ -213,6 +229,8 @@ export function WizardProvider({ children }: { children: ReactNode }) {
         setCurrentScreen,
         setExtractedData,
         updateExtractedBuilding,
+        setTabaData,
+        setTabaSkipped,
         reset,
         clearDraft,
         dismissDraft,

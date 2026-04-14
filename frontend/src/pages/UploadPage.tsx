@@ -85,7 +85,7 @@ export default function UploadPage() {
       if (progressTimer) clearInterval(progressTimer);
       setProgress(100);
       setPhase("done");
-      setExtractedData(result.buildings, result.tabas, result.warnings);
+      setExtractedData(result.buildings, result.tabas as unknown as import("@/types").TabaData[], result.warnings);
       navigate("/validate");
     } catch (err) {
       if (progressTimer) clearInterval(progressTimer);
