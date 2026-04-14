@@ -544,6 +544,24 @@ class JobQueue:
                 logger.error("Job %s: Excel generation failed: %s", job_id, exc)
                 excel_path = None
 
+            # Generate executive summary PDF
+            pdf_path = None
+            try:
+                from documents.pdf_builder import build_executive_summary
+                from pathlib import Path as P
+                P(output_dir).mkdir(parents=True, exist_ok=True)
+                pdf_path = build_executive_summary(
+                    nachla=nachla.model_dump(),
+                    buildings=[b.model_dump() for b in buildings],
+                    tabas=[t.model_dump() for t in tabas],
+                    calc_results=calc_results,
+                    report_date=report_data.report_date,
+                    output_path=f"{output_dir}/{job_id}_summary.pdf",
+                )
+                logger.info("Job %s: PDF summary generated at %s", job_id, pdf_path)
+            except Exception as exc:
+                logger.error("Job %s: PDF generation failed: %s", job_id, exc)
+
             # Save audit log
             try:
                 from pathlib import Path as P
@@ -562,7 +580,7 @@ class JobQueue:
                 "word_path": word_path,
                 "excel_path": excel_path,
                 "audit_path": audit_path,
-                "pdf_path": None,
+                "pdf_path": pdf_path,
                 "total_regularization_cost": report_data.total_regularization_cost,
                 "total_usage_fees": report_data.total_usage_fees,
                 "total_permit_fees": report_data.total_permit_fees,
