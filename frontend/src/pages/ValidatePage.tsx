@@ -9,17 +9,17 @@ import FocusManager from "@/components/ui/FocusManager";
 
 export default function ValidatePage() {
   const navigate = useNavigate();
-  const { extractedBuildings, extractionWarnings, updateExtractedBuilding } = useWizardContext();
+  const { formData, extractedBuildings, extractionWarnings, updateExtractedBuilding } = useWizardContext();
 
   const [modifiedIds, setModifiedIds] = useState<Set<number>>(new Set());
   const [editingMobileId, setEditingMobileId] = useState<number | null>(null);
 
-  // Redirect if no extraction data
+  // Redirect if no form data at all (direct URL access)
   useEffect(() => {
-    if (extractedBuildings.length === 0) {
-      navigate("/upload", { replace: true });
+    if (!formData.owner_name && !formData.moshav_name) {
+      navigate("/intake", { replace: true });
     }
-  }, [extractedBuildings, navigate]);
+  }, [formData, navigate]);
 
   const handleBuildingUpdate = useCallback((updated: Building) => {
     updateExtractedBuilding(updated.id, updated);
@@ -27,7 +27,7 @@ export default function ValidatePage() {
     setEditingMobileId(null);
   }, [updateExtractedBuilding]);
 
-  if (extractedBuildings.length === 0) return null;
+  const hasBuildings = extractedBuildings.length > 0;
 
   return (
     <FocusManager focusKey="validate">
@@ -47,6 +47,9 @@ export default function ValidatePage() {
         <h1 tabIndex={-1} className="outline-none font-heading text-[1.35rem] font-bold text-wheat-700 mb-1.5">
           אימות נתוני מסמכים
         </h1>
+
+        {hasBuildings ? (
+          <>
         <p className="text-[0.9rem] text-soil-600 mb-4 leading-relaxed">
           המערכת זיהתה {extractedBuildings.length} מבנים מהמסמכים. אנא בדקו שהנתונים נכונים.
         </p>
@@ -87,6 +90,21 @@ export default function ValidatePage() {
             </div>
           ))}
         </div>
+          </>
+        ) : (
+          <div className="text-center py-10">
+            <div className="text-3xl mb-3">&#x1F3D7;&#xFE0F;</div>
+            <p className="text-[0.95rem] text-soil-600 mb-2">לא זוהו מבנים מהמסמכים</p>
+            <p className="text-[0.85rem] text-soil-500 mb-4">
+              המבנים יזוהו בשלב העיבוד, או שניתן להמשך לשלב הבא
+            </p>
+            {extractionWarnings.length > 0 && (
+              <div role="alert" className="mb-5 p-3 bg-wheat-50 border border-wheat-200 rounded-[--radius-sm] text-wheat-700 text-[0.85rem] text-right">
+                {extractionWarnings.map((w, i) => <p key={i}>{w}</p>)}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Navigation */}
         <div className="flex flex-col-reverse sm:flex-row gap-3 mt-7 pt-5 border-t border-[#D8D0C4] max-sm:sticky max-sm:bottom-0 max-sm:bg-[rgba(255,253,248,0.95)] max-sm:backdrop-blur-sm max-sm:z-20 max-sm:pb-3 max-sm:-mx-5 max-sm:px-5">

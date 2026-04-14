@@ -62,8 +62,8 @@ export default function UploadPage() {
     }
 
     if (Object.keys(validFiles).length === 0) {
-      setError("לא נבחרו קבצים לניתוח.");
-      setPhase("error");
+      // No files — skip extraction and go to validate/taba
+      navigate("/validate");
       return;
     }
 
