@@ -512,8 +512,14 @@ class JobQueue:
                 ws.append(["מבנים"])
                 ws.append(["#", "שם", "סוג", "סטטוס", "שטח עיקרי", "חריגה"])
                 for b in buildings:
+                    type_he = {'residential': 'בית מגורים', 'service': 'שירות', 'agricultural': 'חקלאי',
+                               'pool': 'בריכה', 'pergola': 'פרגולה', 'plach': 'פל"ח', 'shed_open': 'סככה'}
+                    status_he = {'compliant': 'תקין', 'deviation': 'חריגה', 'no_permit': 'ללא היתר',
+                                 'marked_demolition': 'להריסה'}
                     ws.append([
-                        b.id, b.name, b.building_type.value, b.status.value,
+                        b.id, b.name,
+                        type_he.get(b.building_type.value, b.building_type.value),
+                        status_he.get(b.status.value, b.status.value),
                         b.main_area_sqm, b.deviation_sqm or 0,
                     ])
                 ws.append([])
