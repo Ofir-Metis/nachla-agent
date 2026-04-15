@@ -50,6 +50,9 @@ class IntakeRequest(BaseModel):
     future_plans: str | None = Field(default=None, description="תוכניות עתידיות")
     monday_item_id: str | None = Field(default=None, description="מזהה פריט ב-Monday.com")
 
+    # Land value
+    shovi_per_sqm: float = Field(default=7000, ge=0, description='שווי מ"ר אקוויוולנטי (ש"ח)')
+
     # Pre-extracted data from /api/v1/extract (validated by user before submission)
     pre_extracted_buildings: list[dict[str, Any]] | None = Field(default=None, description="מבנים שזוהו מהמסמכים ואושרו ע\"י המשתמש")
     pre_extracted_tabas: list[dict[str, Any]] | None = Field(default=None, description='תב"עות שזוהו מהמסמכים')

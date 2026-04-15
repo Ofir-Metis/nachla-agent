@@ -868,11 +868,15 @@ class NachlaAgent:
             try:
                 # Calculate usage fee for main area
                 usage_type = "agricultural" if building.building_type == BuildingType.AGRICULTURAL else "residential"
+                # Map building type to area_type for usage fee calculation
+                area_type = "service" if building.building_type == BuildingType.SERVICE else "main"
+                if building.building_type == BuildingType.PERGOLA:
+                    area_type = "pergola"
                 fee_result = await self.invoke_tool(
                     "calculate_dmei_shimush",
                     {
                         "area_sqm": building.main_area_sqm + (building.deviation_sqm or 0),
-                        "area_type": "main",
+                        "area_type": area_type,
                         "shovi_per_sqm": shovi,
                         "usage_type": usage_type,
                         "building_order": building.building_order,
@@ -1039,9 +1043,15 @@ class NachlaAgent:
                 continue
             try:
                 # Build areas list from building model
+                # For service/agricultural buildings, their main_area is typed as "service" not "main"
                 building_areas: list[dict[str, Any]] = []
+                main_type = "main"
+                if building.building_type == BuildingType.SERVICE:
+                    main_type = "service"
+                elif building.building_type == BuildingType.POOL:
+                    main_type = "pool"
                 if building.main_area_sqm > 0:
-                    building_areas.append({"type": "main", "area_sqm": building.main_area_sqm})
+                    building_areas.append({"type": main_type, "area_sqm": building.main_area_sqm})
                 if building.service_area_sqm > 0:
                     building_areas.append({"type": "service", "area_sqm": building.service_area_sqm})
                 if building.mamad_area_sqm > 0:
@@ -1084,6 +1094,12 @@ class NachlaAgent:
                 },
             )
             results["permit_fee_cap"] = cap_result
+            # Apply cap to total if exceeded
+            cap_data = cap_result.get("result", {})
+            if cap_data.get("exceeds_cap") and cap_data.get("capped_fees") is not None:
+                original = results["total_permit_fees"]
+                results["total_permit_fees"] = cap_data["capped_fees"]
+                logger.info("Permit fee cap applied: %s -> %s", original, cap_data["capped_fees"])
         except Exception as exc:
             logger.error("Permit fee cap check failed: %s", exc)
 
