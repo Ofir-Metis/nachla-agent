@@ -12,7 +12,7 @@ interface WizardStepperProps {
 
 export default function WizardStepper({ currentStep, completedSteps }: WizardStepperProps) {
   return (
-    <div className="flex items-center justify-center mb-4 sm:mb-5" dir="rtl" role="list" aria-label="שלבי הטופס">
+    <div className="flex items-center justify-center mb-4 sm:mb-5 overflow-x-auto max-w-full" dir="rtl" role="list" aria-label="שלבי הטופס">
       {STEP_LABELS.map((label, idx) => {
         const stepNum = idx + 1;
         const isActive = stepNum === currentStep;
@@ -26,7 +26,7 @@ export default function WizardStepper({ currentStep, completedSteps }: WizardSte
               <div
                 aria-current={isActive ? "step" : undefined}
                 className={[
-                  "w-9 h-9 sm:w-11 sm:h-11 rounded-full flex items-center justify-center font-heading font-semibold text-xs sm:text-sm transition-all",
+                  "w-8 h-8 sm:w-11 sm:h-11 rounded-full flex items-center justify-center font-heading font-semibold text-[0.7rem] sm:text-sm transition-all",
                   isActive
                     ? "bg-olive-700 text-white shadow-[0_0_0_4px_rgba(61,90,62,0.15)] scale-[1.08]"
                     : isCompleted
@@ -58,7 +58,7 @@ export default function WizardStepper({ currentStep, completedSteps }: WizardSte
             {showConnector && (
               <div
                 className={[
-                  "w-6 sm:w-12 h-0.5 mx-1 sm:mx-2 mt-0 sm:mt-[-1.2rem] rounded-full transition-colors",
+                  "w-4 sm:w-12 h-0.5 mx-0.5 sm:mx-2 mt-0 sm:mt-[-1.2rem] rounded-full transition-colors shrink-0",
                   completedSteps.includes(stepNum) ? "bg-olive-400" : "bg-[#D8D0C4]",
                 ].join(" ")}
                 aria-hidden="true"

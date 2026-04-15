@@ -100,7 +100,7 @@ export default function DashboardPage() {
 
   return (
     <FocusManager focusKey="dashboard">
-      <div className="pb-20">
+      <div className="pb-6">
         <h1
           tabIndex={-1}
           className="font-heading text-[1.5rem] font-bold text-olive-800 mb-6 outline-none"
@@ -114,7 +114,7 @@ export default function DashboardPage() {
             type="button"
             onClick={() => { reset(); navigate("/intake"); }}
             className="
-              w-full max-w-md py-3.5 sm:py-4 text-base sm:text-lg font-bold
+              w-full max-w-full sm:max-w-md py-3.5 sm:py-4 text-base sm:text-lg font-bold
               bg-olive-700 text-white rounded-[--radius-md]
               shadow-[--shadow-md] transition-all duration-200
               hover:bg-olive-800 hover:shadow-[--shadow-lg] hover:-translate-y-0.5
