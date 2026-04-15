@@ -1,23 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import TextInput from "@/components/ui/TextInput";
 import FormNav from "@/components/ui/FormNav";
-import { MOSHAV_PRIORITY_MAP, PRIORITY_AREA_LABELS } from "@/lib/labels";
+import { PRIORITY_AREA_LABELS } from "@/lib/labels";
 import type { PriorityArea } from "@/types";
 
-const MOSHAV_LIST = [
-  "נהלל",
-  "כפר ורבורג",
-  "בית חרות",
-  "גן יאשיה",
-  "כפר יהושע",
-  "נחלת יהודה",
-  "עין ורד",
-  "גבעת עדה",
-  "כפר הרואה",
-  "בניאמינה",
-  "פרדס חנה",
-  "זכרון יעקב",
-];
+// No closed list — any Israeli settlement name is valid.
+// Priority area is auto-detected by the backend from settlements_priority.json
 
 interface StepLocationData {
   moshav_name: string;
@@ -37,16 +25,9 @@ export default function StepLocation({ data, onChange, onNext, onBack }: StepLoc
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showOverride, setShowOverride] = useState(false);
 
-  // Auto-detect priority area when moshav name changes
-  const detectedArea = MOSHAV_PRIORITY_MAP[data.moshav_name.trim()] as PriorityArea | undefined;
-
-  useEffect(() => {
-    if (detectedArea && !showOverride && data.priority_area !== detectedArea) {
-      onChange({ ...data, priority_area: detectedArea });
-    }
-  }, [detectedArea, showOverride]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const displayArea: PriorityArea | undefined = data.priority_area ?? detectedArea;
+  // Priority area is detected by the backend during job processing.
+  // The frontend shows it if already set (e.g., from a previous detection or manual override).
+  const displayArea: PriorityArea | undefined = data.priority_area;
 
   function validate(): boolean {
     const errs: Record<string, string> = {};
@@ -80,7 +61,7 @@ export default function StepLocation({ data, onChange, onNext, onBack }: StepLoc
         label="שם המושב"
         name="moshav_name"
         placeholder="לדוגמה: נהלל"
-        helpText="התחילו להקליד והשם יושלם אוטומטית"
+        helpText="הזינו את שם המושב או הישוב החקלאי"
         required
         value={data.moshav_name}
         onChange={(e) => {
@@ -88,7 +69,6 @@ export default function StepLocation({ data, onChange, onNext, onBack }: StepLoc
           if (errors.moshav_name) setErrors((p) => ({ ...p, moshav_name: "" }));
         }}
         error={errors.moshav_name}
-        datalistOptions={MOSHAV_LIST}
       />
 
       {/* Priority area display */}
