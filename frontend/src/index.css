@@ -62,11 +62,13 @@ html {
   scroll-behavior: smooth;
   background: var(--color-parchment);
   scrollbar-color: var(--color-soil-500) var(--color-parchment);
+  overflow-x: hidden;
   overflow-y: scroll;
 }
 
 body {
   margin: 0;
+  overflow-x: hidden;
   font-family: var(--font-body);
   background:
     radial-gradient(ellipse at 20% 0%, rgba(61, 90, 62, 0.04) 0%, transparent 60%) fixed,
