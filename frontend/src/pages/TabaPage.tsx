@@ -17,6 +17,7 @@ export default function TabaPage() {
   const [method, setMethod] = useState<TabaMethod | null>(null);
   const [tabas, setTabas] = useState<TabaData[]>(extractedTabas);
   const [showSkipWarning, setShowSkipWarning] = useState(false);
+  const [editIndex, setEditIndex] = useState<number | null>(null);
 
   // Route guard
   useEffect(() => {
@@ -33,11 +34,23 @@ export default function TabaPage() {
   }, [extractedTabas, tabas.length]);
 
   const handleAddTaba = (taba: TabaData) => {
+    if (editIndex !== null) {
+      // Replace taba at editIndex
+      setTabas((prev) => prev.map((t, i) => (i === editIndex ? { ...taba, is_primary: t.is_primary } : t)));
+      setEditIndex(null);
+      setMethod(null);
+      return;
+    }
     // If this is the first taba, mark it as primary
     if (tabas.length === 0) {
       taba.is_primary = true;
     }
     setTabas((prev) => [...prev, taba]);
+  };
+
+  const handleEditTaba = (index: number) => {
+    setEditIndex(index);
+    setMethod("manual");
   };
 
   const handleRemoveTaba = (index: number) => {
@@ -101,7 +114,7 @@ export default function TabaPage() {
               תב"עות שנוספו ({tabas.length})
             </h3>
             {tabas.map((t, i) => (
-              <TabaSummaryCard key={`${t.taba_number}-${i}`} taba={t} index={i} onRemove={handleRemoveTaba} />
+              <TabaSummaryCard key={`${t.taba_number}-${i}`} taba={t} index={i} onRemove={handleRemoveTaba} onEdit={handleEditTaba} />
             ))}
           </div>
         )}
@@ -124,7 +137,11 @@ export default function TabaPage() {
           <TabaUploadMethod onTabasExtracted={handleTabasExtracted} />
         )}
         {method === "manual" && (
-          <TabaManualForm onAdd={handleAddTaba} />
+          <TabaManualForm
+            onAdd={handleAddTaba}
+            initialData={editIndex !== null ? tabas[editIndex] : undefined}
+            editMode={editIndex !== null}
+          />
         )}
 
         {/* Skip option */}

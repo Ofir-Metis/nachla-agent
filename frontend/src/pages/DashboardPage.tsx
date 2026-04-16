@@ -136,6 +136,11 @@ export default function DashboardPage() {
         {error && !loading && (
           <div className="bg-error/10 border border-error/20 rounded-[--radius-md] p-4 text-error text-[0.9rem] text-center mb-6">
             {error}
+            <br />
+            <button type="button" onClick={() => window.location.reload()}
+              className="mt-2 px-4 py-1.5 bg-olive-700 text-white rounded-[--radius-sm] text-[0.82rem] font-medium cursor-pointer hover:bg-olive-600">
+              נסו שנית
+            </button>
           </div>
         )}
 

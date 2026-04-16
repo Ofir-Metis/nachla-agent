@@ -1050,6 +1050,8 @@ class NachlaAgent:
                     main_type = "service"
                 elif building.building_type == BuildingType.POOL:
                     main_type = "pool"
+                elif building.building_type == BuildingType.PERGOLA:
+                    main_type = "pergola_opaque" if building.pergola_roof_type and building.pergola_roof_type.value == "opaque" else "pergola_transparent"
                 if building.main_area_sqm > 0:
                     building_areas.append({"type": main_type, "area_sqm": building.main_area_sqm})
                 if building.service_area_sqm > 0:
@@ -1086,11 +1088,14 @@ class NachlaAgent:
 
         # Check permit fee cap
         try:
+            residential_count = sum(1 for b in buildings if b.building_type == BuildingType.RESIDENTIAL)
             cap_result = await self.invoke_tool(
                 "check_permit_fee_cap",
                 {
                     "total_fees": results["total_permit_fees"],
                     "priority_area": nachla.priority_area.value if nachla.priority_area else None,
+                    "num_housing_units": max(1, residential_count),
+                    "shovi_per_sqm": nachla.shovi_per_sqm if hasattr(nachla, 'shovi_per_sqm') else 7000,
                 },
             )
             results["permit_fee_cap"] = cap_result

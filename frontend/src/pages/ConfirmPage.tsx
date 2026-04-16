@@ -146,6 +146,29 @@ export default function ConfirmPage() {
           </div>
         )}
 
+        {/* Extracted tabas summary */}
+        {extractedTabas.length > 0 && (
+          <div className="mt-4 p-4 bg-olive-50/50 border border-olive-200 rounded-[--radius-md]">
+            <h3 className="text-[0.95rem] font-semibold text-olive-800 mb-2">
+              תב"עות ({extractedTabas.length})
+            </h3>
+            <ul className="space-y-1">
+              {extractedTabas.map((t, i) => (
+                <li key={i} className="text-[0.85rem] text-soil-600 flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-olive-400 shrink-0" />
+                  <span>{t.taba_number} — {t.taba_name}</span>
+                  <span className="text-soil-400">|</span>
+                  <span>{t.plot_size_sqm} מ"ר</span>
+                </li>
+              ))}
+            </ul>
+            <button type="button" onClick={() => navigate("/taba")}
+              className="mt-3 text-[0.82rem] text-olive-700 hover:text-olive-900 underline cursor-pointer bg-transparent border-none">
+              עריכת נתוני תב"ע
+            </button>
+          </div>
+        )}
+
         {/* Navigation */}
         <div className="flex flex-col-reverse sm:flex-row gap-3 mt-6 sm:mt-8 pt-5 sm:pt-6 border-t border-[#D8D0C4] max-sm:sticky max-sm:bottom-0 max-sm:bg-[rgba(255,253,248,0.95)] max-sm:backdrop-blur-sm max-sm:z-20 max-sm:pb-3 max-sm:-mx-5 max-sm:px-5">
           {/* Back button */}

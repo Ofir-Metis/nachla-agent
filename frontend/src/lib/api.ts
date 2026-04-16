@@ -113,18 +113,24 @@ export function uploadFilesWithProgress(
   });
 }
 
+export interface AbortableRequest<T> {
+  promise: Promise<T>;
+  abort: () => void;
+}
+
 /** POST /api/v1/extract — send files to AI for building/taba extraction */
 export function extractDocuments(
   files: Record<string, File>,
   onProgress: (percent: number) => void,
-): Promise<ExtractionResponse> {
-  return new Promise((resolve, reject) => {
+): AbortableRequest<ExtractionResponse> {
+  const xhr = new XMLHttpRequest();
+
+  const promise = new Promise<ExtractionResponse>((resolve, reject) => {
     const formData = new FormData();
     for (const [_key, file] of Object.entries(files)) {
       if (file) formData.append("files", file);
     }
 
-    const xhr = new XMLHttpRequest();
     xhr.open("POST", `${BASE_URL}/api/v1/extract`);
 
     xhr.upload.addEventListener("progress", (e) => {
@@ -153,8 +159,14 @@ export function extractDocuments(
       reject(new ApiError("שגיאת רשת בניתוח המסמכים.", 0));
     });
 
+    xhr.addEventListener("abort", () => {
+      reject(new ApiError("הניתוח בוטל.", 0));
+    });
+
     xhr.send(formData);
   });
+
+  return { promise, abort: () => xhr.abort() };
 }
 
 /** GET /api/v1/jobs/{id}/status — poll job progress */

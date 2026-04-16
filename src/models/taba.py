@@ -83,10 +83,13 @@ class Taba(BaseModel):
             "בתוקף": "approved",
             "מאושר": "approved",
             "מאושרת": "approved",
+            "תקפה": "approved",
+            "אושרה": "approved",
             "בתהליך": "in_process",
             "בהליך אישור": "in_process",
             "הופקדה": "deposited",
             "הופקד": "deposited",
+            "בהפקדה": "deposited",
         }
         if v in hebrew_map:
             return hebrew_map[v]

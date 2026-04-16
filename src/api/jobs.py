@@ -510,7 +510,10 @@ class JobQueue:
                 h33 = calc_results.get("hivun", {}).get("hivun_33", {}).get("result", 0)
                 ws.append(["היוון 3.75%", h375])
                 ws.append(["היוון 33%", h33])
+                ws.append(["היטל השבחה", report_data.betterment_levy if hasattr(report_data, 'betterment_levy') else 0])
                 ws.append([])
+                ws.append(["סה\"כ", (report_data.total_usage_fees + report_data.total_permit_fees +
+                    (report_data.betterment_levy if hasattr(report_data, 'betterment_levy') else 0) + h375)])
 
                 # Buildings
                 ws.append(["מבנים"])
@@ -541,6 +544,16 @@ class JobQueue:
                 for cell in ws[5]:
                     if cell.value:
                         cell.font = Font(bold=True)
+
+                # Bold the total row and apply currency format to column B cost cells
+                for row in ws.iter_rows(min_row=6, max_col=2):
+                    for cell in row:
+                        if cell.column == 2 and isinstance(cell.value, (int, float)):
+                            cell.number_format = '#,##0'
+                    # Bold the "סה"כ" row
+                    if row[0].value and 'סה"כ' in str(row[0].value):
+                        for cell in row:
+                            cell.font = Font(bold=True)
 
                 wb.save(excel_path)
                 logger.info("Job %s: Excel report generated at %s", job_id, excel_path)

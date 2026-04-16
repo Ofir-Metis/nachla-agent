@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useWizardContext } from "@/context/WizardContext";
 import { extractDocuments } from "@/lib/api";
@@ -31,6 +31,7 @@ export default function UploadPage() {
   const [progress, setProgress] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<(() => void) | null>(null);
 
   // Route guard
   useEffect(() => {
@@ -71,7 +72,7 @@ export default function UploadPage() {
     let progressTimer: ReturnType<typeof setInterval> | null = null;
 
     try {
-      const result = await extractDocuments(validFiles, (pct) => {
+      const { promise, abort } = extractDocuments(validFiles, (pct) => {
         setProgress(pct);
         if (pct >= 30 && !progressTimer) {
           setPhase("analyzing");
@@ -81,8 +82,11 @@ export default function UploadPage() {
           }, 1000);
         }
       });
+      abortRef.current = abort;
+      const result = await promise;
 
       if (progressTimer) clearInterval(progressTimer);
+      abortRef.current = null;
       setProgress(100);
       setPhase("done");
       setExtractedData(result.buildings, result.tabas as unknown as import("@/types").TabaData[], result.warnings);
@@ -157,7 +161,7 @@ export default function UploadPage() {
 
             <button
               type="button"
-              onClick={() => { setPhase("idle"); setProgress(0); }}
+              onClick={() => { abortRef.current?.(); abortRef.current = null; setPhase("idle"); setProgress(0); }}
               className="mt-4 text-[0.85rem] text-soil-500 hover:text-error cursor-pointer bg-transparent border-none underline"
             >
               ביטול

@@ -22,20 +22,31 @@ interface TabaSummaryCardProps {
   taba: TabaData;
   index: number;
   onRemove: (index: number) => void;
+  onEdit: (index: number) => void;
 }
 
-export default function TabaSummaryCard({ taba, index, onRemove }: TabaSummaryCardProps) {
+export default function TabaSummaryCard({ taba, index, onRemove, onEdit }: TabaSummaryCardProps) {
   return (
     <div className="p-4 bg-white border border-[#D8D0C4] rounded-[--radius-md] relative">
-      {/* Remove button */}
-      <button
-        type="button"
-        onClick={() => onRemove(index)}
-        className="absolute top-2 left-2 w-7 h-7 flex items-center justify-center text-soil-400 hover:text-error hover:bg-error/10 rounded-full cursor-pointer transition-colors bg-transparent border-none text-[1.1rem]"
-        title="הסרה"
-      >
-        &#x2715;
-      </button>
+      {/* Action buttons */}
+      <div className="absolute top-2 left-2 flex gap-1">
+        <button
+          type="button"
+          onClick={() => onEdit(index)}
+          className="w-7 h-7 flex items-center justify-center text-soil-400 hover:text-olive-700 hover:bg-olive-50 rounded-full cursor-pointer transition-colors bg-transparent border-none text-[0.95rem]"
+          title="עריכה"
+        >
+          &#x270E;
+        </button>
+        <button
+          type="button"
+          onClick={() => onRemove(index)}
+          className="w-7 h-7 flex items-center justify-center text-soil-400 hover:text-error hover:bg-error/10 rounded-full cursor-pointer transition-colors bg-transparent border-none text-[1.1rem]"
+          title="הסרה"
+        >
+          &#x2715;
+        </button>
+      </div>
 
       {/* Header */}
       <div className="flex items-start gap-3 mb-3">

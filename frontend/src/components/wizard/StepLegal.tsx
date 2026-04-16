@@ -174,6 +174,17 @@ export default function StepLegal({
         </div>
       </div>
 
+      <TextInput
+        label="מועצה אזורית"
+        name="regional_council"
+        placeholder="לדוגמה: עמק יזרעאל"
+        helpText="שם המועצה האזורית (לחישוב עלויות פיתוח)"
+        value={formData.regional_council ?? ""}
+        onChange={(e) => {
+          onChange("regional_council", e.target.value || undefined as unknown as string);
+        }}
+      />
+
       <FormNav onBack={onBack} onNext={handleNext} showBack />
     </div>
   );

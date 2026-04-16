@@ -26,6 +26,8 @@ export interface IntakeData {
   priority_area?: PriorityArea;
   prior_permit_fees_purchased?: number;
   prior_permit_fees_date?: number;
+  shovi_per_sqm?: number;
+  regional_council?: string;
 }
 
 export type BuildingType =
@@ -60,6 +62,7 @@ export interface Building {
   total_area_sqm: number;
   deviation_sqm?: number;
   user_confirmed: boolean;
+  recommendations?: string[];
 }
 
 export interface DocumentClassification {
@@ -71,6 +74,12 @@ export interface DocumentClassification {
 }
 
 export type TabaStatus = "approved" | "in_process" | "deposited";
+
+export interface TabaRights {
+  main_area_sqm: number;
+  service_area_sqm: number;
+  mamad_sqm?: number;
+}
 
 export interface TabaData {
   taba_number: string;
@@ -87,6 +96,11 @@ export interface TabaData {
   split_min_plot_sqm?: number;
   pool_allowed?: boolean;
   attached_unit_allowed?: boolean;
+  unit_rights?: TabaRights[];
+  mamad_sqm?: number;
+  attached_unit_sqm?: number;
+  split_max_plots?: number;
+  coverage_percent?: number;
   source: "govmap" | "pdf_extraction" | "manual";
   is_primary: boolean;
 }
@@ -132,6 +146,7 @@ export interface BuildingCostCard {
   usage_fees: number;
   betterment_levy: number;
   total_cost: number;
+  recommendations?: string[];
 }
 
 export interface CostSummary {

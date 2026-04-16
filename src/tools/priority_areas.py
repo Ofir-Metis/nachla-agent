@@ -95,8 +95,11 @@ def get_priority_area(settlement_name: str) -> str | None:
         return settlements[normalized]
 
     # Partial match: check if input is a substring of a known settlement or vice versa
+    # Require match length >= 3 characters to avoid false positives
     for key, area in settlements.items():
-        if normalized in key or key in normalized:
+        if len(normalized) >= 3 and normalized in key:
+            return area
+        if len(key) >= 3 and key in normalized:
             return area
 
     return None

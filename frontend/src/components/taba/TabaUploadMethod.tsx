@@ -19,7 +19,8 @@ export default function TabaUploadMethod({ onTabasExtracted }: TabaUploadMethodP
     setExtracting(true);
 
     try {
-      const result = await extractDocuments({ taba_document: file }, () => {});
+      const { promise } = extractDocuments({ taba_document: file }, () => {});
+      const result = await promise;
       const tabas = (result.tabas || []) as unknown as TabaData[];
 
       if (tabas.length === 0) {

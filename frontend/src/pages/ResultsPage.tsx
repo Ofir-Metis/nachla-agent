@@ -65,6 +65,10 @@ export default function ResultsPage() {
           <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-l from-olive-700 via-olive-400 to-wheat-400" />
           <div className="p-3 bg-error/10 border border-error/30 rounded-[--radius-sm] text-error text-[0.85rem]">
             {error ?? "לא ניתן לטעון את התוצאות"}
+            <button type="button" onClick={() => window.location.reload()}
+              className="mt-3 px-5 py-2 bg-olive-700 text-white rounded-[--radius-sm] text-[0.85rem] font-medium cursor-pointer hover:bg-olive-600">
+              נסו שנית
+            </button>
           </div>
         </div>
       </div>
@@ -127,7 +131,7 @@ export default function ResultsPage() {
           <div className="mt-6">
             <h2 className="font-semibold text-[0.95rem] text-soil-800 mb-3">פירוט עלויות לפי מבנה</h2>
             <div className="space-y-2">
-              {results.building_cards.map((card: { building_id: number; building_name: string; status_description: string; permit_fees: number; usage_fees: number; betterment_levy: number; total_cost: number }) => (
+              {results.building_cards.map((card: { building_id: number; building_name: string; status_description: string; permit_fees: number; usage_fees: number; betterment_levy: number; total_cost: number; recommendations?: string[] }) => (
                 <div key={card.building_id} className="flex items-center justify-between p-3 bg-white border border-[#D8D0C4] rounded-[--radius-sm]">
                   <div className="min-w-0 flex-1">
                     <div className="font-medium text-[0.88rem] text-soil-800 truncate">
@@ -139,6 +143,11 @@ export default function ResultsPage() {
                       {card.betterment_levy > 0 && <span>השבחה: {card.betterment_levy.toLocaleString()} ₪</span>}
                       {card.total_cost === 0 && <span className="text-success">פטור</span>}
                     </div>
+                    {card.recommendations && card.recommendations.length > 0 && (
+                      <div className="text-[0.75rem] text-soil-400 mt-1">
+                        {card.recommendations.map((r, i) => <span key={i}>{r} </span>)}
+                      </div>
+                    )}
                   </div>
                   <div className="text-[0.95rem] font-semibold text-soil-800 shrink-0 ms-3">
                     {card.total_cost > 0 ? `${card.total_cost.toLocaleString()} ₪` : "—"}

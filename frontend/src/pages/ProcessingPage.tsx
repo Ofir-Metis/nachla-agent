@@ -112,6 +112,17 @@ export default function ProcessingPage() {
           </button>
         </div>
       )}
+
+      {/* Cancel link */}
+      <div className="mt-4 text-center">
+        <button
+          type="button"
+          onClick={() => navigate("/")}
+          className="text-[0.85rem] text-soil-500 hover:text-soil-700 transition-colors cursor-pointer bg-transparent border-none underline"
+        >
+          ביטול וחזרה לרשימה
+        </button>
+      </div>
     </div>
     </div>
     </FocusManager>

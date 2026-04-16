@@ -308,13 +308,16 @@ def build_report(
         ("דמי היתר", permit),
         ("היוון 3.75%", h375_total),
         ("היוון 33%", h33_total),
-        ("פיצול", split_cost),
+        ("פיצול", "לא זכאי" if not split_eligible else split_cost),
         ("היטל השבחה", betterment_total),
     ]
     for label, amount in costs:
         row = cost_table.add_row()
         row.cells[0].text = label
-        row.cells[1].text = _fmt_currency(amount)
+        if isinstance(amount, str):
+            row.cells[1].text = amount
+        else:
+            row.cells[1].text = _fmt_currency(float(amount or 0))
         for cell in row.cells:
             for p in cell.paragraphs:
                 _set_rtl(p)
