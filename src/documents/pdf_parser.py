@@ -8,6 +8,7 @@ All text extraction enforces UTF-8 encoding.
 
 from __future__ import annotations
 
+import base64
 import logging
 import os
 import re
@@ -181,6 +182,39 @@ class PDFParser:
         size = path.stat().st_size
         if size > MAX_FILE_SIZE_BYTES:
             raise ValueError(f"File exceeds 50 MB limit ({size / (1024 * 1024):.1f} MB): {file_path}")
+
+    def read_pdf_base64(self, file_path: str) -> str | None:
+        """Read PDF file and return as base64 string for Claude Vision.
+
+        Claude's native PDF vision processes each page as both text and image,
+        enabling extraction from graphic documents like survey maps.
+
+        Args:
+            file_path: Path to the PDF file.
+
+        Returns:
+            Base64-encoded PDF string, or None if file is too large or unreadable.
+        """
+        try:
+            self.validate_file(file_path)
+            with open(file_path, "rb") as f:
+                data = f.read()
+
+            # Safety limit — Claude's request limit is 32MB total
+            max_vision_size = 20 * 1024 * 1024  # 20MB
+            if len(data) > max_vision_size:
+                logger.warning(
+                    "PDF too large for vision (%d MB), skipping base64 encoding",
+                    len(data) // (1024 * 1024),
+                )
+                return None
+
+            encoded = base64.b64encode(data).decode("utf-8")
+            logger.info("PDF encoded for vision: %s (%d KB)", file_path, len(data) // 1024)
+            return encoded
+        except Exception as exc:
+            logger.warning("Failed to read PDF as base64: %s", exc)
+            return None
 
     # ------------------------------------------------------------------
     # Docling backend

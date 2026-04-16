@@ -1360,25 +1360,43 @@ class NachlaAgent:
             except Exception as exc:
                 logger.error("Failed to parse %s (%s): %s", file_type, fpath, exc)
 
-        if not all_text_parts:
-            return [], [], []
-
-        combined_text = "\n\n".join(all_text_parts)
+        combined_text = "\n\n".join(all_text_parts) if all_text_parts else ""
         self._document_context = combined_text
+
+        # Read PDFs as base64 for Claude Vision (enables reading graphic survey maps)
+        pdf_base64_data: str | None = None
+        for file_type, fpath in file_paths.items():
+            if fpath.lower().endswith('.pdf'):
+                b64 = parser.read_pdf_base64(fpath)
+                if b64:
+                    pdf_base64_data = b64
+                    logger.info("PDF vision enabled for: %s", fpath)
+                    break  # Use first valid PDF for vision
+
+        if not all_text_parts and not pdf_base64_data:
+            return [], [], []
 
         # Single LLM call: classify documents AND extract data together
         doc_classifications: list[dict[str, Any]] = []
 
         extraction_prompt = (
             "You are analyzing documents for an Israeli agricultural settlement (nachla) feasibility study.\n\n"
+            "IMPORTANT: This document may be a VISUAL survey map (מפת מדידה) — a drawing showing buildings as shapes "
+            "with labels, dimensions, and area measurements. Look at the VISUAL content carefully:\n"
+            "- Building shapes/outlines on the map\n"
+            "- Numbers written near buildings (area in sqm / מ\"ר)\n"
+            "- Hebrew labels identifying building types (בית מגורים, מחסן, לול, סככה, etc.)\n"
+            "- Plot boundaries and total plot area\n"
+            "- Date stamps, surveyor information\n"
+            "Do NOT rely only on extracted text — READ the visual drawing.\n\n"
             "STEP 1 — CLASSIFY each document:\n"
-            "For each file section (marked with --- filename ---), determine:\n"
+            "Determine:\n"
             "- detected_type: מפת מדידה / היתר בנייה / תב\"ע / סיכום בדיקת התכנות / נסח טאבו / לא רלוונטי\n"
             "- is_relevant: true if it contains building/planning data, false if unrelated\n"
             "- confidence: high/medium/low\n"
             "- note: Hebrew explanation if the file seems wrong or irrelevant\n\n"
             "STEP 2 — EXTRACT buildings from relevant documents:\n"
-            "For each building found, return:\n"
+            "For each building found (from visual shapes, labels, or text), return:\n"
             "- name (Hebrew description)\n"
             "- building_type: residential/service/agricultural/plach/pergola/pool/"
             "basement_service/basement_residential/attic/ground_floor_open/"
@@ -1411,6 +1429,7 @@ class NachlaAgent:
                 document_text=combined_text,
                 document_tables=all_tables,
                 extraction_prompt=extraction_prompt,
+                pdf_base64=pdf_base64_data,
             )
         except Exception as exc:
             logger.error("LLM document analysis failed: %s", exc)

@@ -236,12 +236,18 @@ class LLMClient:
     async def analyze_document(
         self,
         system: str,
-        document_text: str,
-        document_tables: list[list[list[str]]],
-        extraction_prompt: str,
+        document_text: str = "",
+        document_tables: list[list[list[str]]] | None = None,
+        extraction_prompt: str = "",
         model: str | None = None,
+        pdf_base64: str | None = None,
     ) -> dict[str, Any]:
         """Extract structured data from a parsed document using Claude.
+
+        Supports two modes:
+        1. Text-only: sends extracted text to Claude (legacy)
+        2. PDF Vision: sends the raw PDF as a base64 document block,
+           enabling Claude to see the visual layout (survey maps, drawings)
 
         Args:
             system: System prompt with domain knowledge.
@@ -249,6 +255,7 @@ class LLMClient:
             document_tables: Tables extracted from PDF.
             extraction_prompt: Instructions for what to extract.
             model: Model override (defaults to main/Sonnet).
+            pdf_base64: Optional base64-encoded PDF for vision processing.
 
         Returns:
             Extracted data as a dict.
@@ -259,14 +266,31 @@ class LLMClient:
                 rows = [" | ".join(row) for row in table]
                 tables_text += f"\n--- Table {i + 1} ---\n" + "\n".join(rows)
 
-        user_content = (
-            f"{extraction_prompt}\n\n"
-            f"--- Document Text ---\n{document_text[:80000]}\n"  # Cap at ~80K chars
-            f"{tables_text}\n\n"
-            "Return your answer as a valid JSON object. No markdown fences."
-        )
+        # Build content blocks — PDF vision first, then text
+        content: list[dict[str, Any]] = []
 
-        messages = [{"role": "user", "content": user_content}]
+        # If we have the raw PDF, send as a document block (Claude Vision)
+        if pdf_base64:
+            content.append({
+                "type": "document",
+                "source": {
+                    "type": "base64",
+                    "media_type": "application/pdf",
+                    "data": pdf_base64,
+                },
+            })
+            logger.info("Sending PDF as vision document block (%d KB)", len(pdf_base64) * 3 // 4 // 1024)
+
+        # Build text block with prompt + extracted text (as fallback context)
+        text_parts = [extraction_prompt]
+        if document_text and document_text.strip():
+            text_parts.append(f"\n\n--- Extracted Text (for reference) ---\n{document_text[:40000]}")
+        if tables_text:
+            text_parts.append(tables_text)
+        text_parts.append("\n\nReturn your answer as a valid JSON object. No markdown fences.")
+        content.append({"type": "text", "text": "\n".join(text_parts)})
+
+        messages = [{"role": "user", "content": content}]
         response = await self.complete(system, messages, model=model or self._model_main)
         text = self._extract_text(response.content)
 
